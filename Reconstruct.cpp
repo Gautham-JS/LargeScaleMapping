@@ -24,16 +24,15 @@ static int getdir(const string _filename, vector<String> &files)
 }
 int main(int argc, char* argv[])
 {
-  // Read input parameters
   if ( argc != 5 )
   {
     help();
     exit(0);
   }
-  // Parse the image paths
+
   vector<String> images_paths;
   getdir( argv[1], images_paths );
-  // Build intrinsics
+
   float f  = atof(argv[2]),
         cx = atof(argv[3]), cy = atof(argv[4]);
   Matx33d K = Matx33d( f, 0, cx,
@@ -42,7 +41,7 @@ int main(int argc, char* argv[])
   bool is_projective = true;
   vector<Mat> Rs_est, ts_est, points3d_estimated;
   reconstruct(images_paths, Rs_est, ts_est, K, points3d_estimated, is_projective);
-  // Print output
+
   cout << "\n----------------------------\n" << endl;
   cout << "Reconstruction: " << endl;
   cout << "============================" << endl;
@@ -54,10 +53,9 @@ int main(int argc, char* argv[])
   viz::Viz3d window("Coordinate Frame");
              window.setWindowSize(Size(500,500));
              window.setWindowPosition(Point(150,150));
-             window.setBackgroundColor(); // black by default
-  // Create the pointcloud
+             window.setBackgroundColor(); 
   cout << "Recovering points  ... ";
-  // recover estimated points3d
+
   vector<Vec3f> point_cloud_est;
   for (int i = 0; i < points3d_estimated.size(); ++i)
     point_cloud_est.push_back(Vec3f(points3d_estimated[i]));
