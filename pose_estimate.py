@@ -4,11 +4,16 @@ import  cv2 as cv
 import matplotlib.pyplot as plt
 import math
 import imutils
+import time
 
 cam = cv2.VideoCapture(0)
 K = [[647.8849454418848, 0.0, 312.70216601346215],
         [0.0, 648.2741486235716, 245.95593954674428],
         [0.0, 0.0, 1.0]]
+K = np.array(K)
+
+distCoeffs = [0.035547431486979156, -0.15592121266783593, 0.0005127230470698213, -0.004324823776384423, 1.2415990279352762]
+distCoeffs = np.array(distCoeffs)
 
 focal_len = 648.2741486235716
 pp = (312.70216601346215, 245.95593954674428)
@@ -18,20 +23,58 @@ im2 = cv2.imread("/home/gautham/Documents/Codes/depth_reconstruct/opencv_frame_3
 
 ref_vocab = []
 
-def odom(im1, im2):
-    try:
-        relocalizeFlag=False
-        im1 = cv.cvtColor(im1, cv2.COLOR_BGR2GRAY)
-        im2 = cv.cvtColor(im2, cv2.COLOR_BGR2GRAY)
 
-        orb = cv2.ORB_create(200)
+class PoseEstimate:
+    def __init__(self,K,distCoeff):
+        self.K = K
+        self.distCoeff = distCoeff
+        
+        self.ref_frame = None
+        self.frame = None
+        self.ref_kpmask = None
+        self.frame_kpmask = None
+        self.match_frame = None
+        self.Kp_ref = None
+        self.descs_ref = None
+        self.Kp_frame = None
+        self.descs_frame = None
+        self.F = None
 
-        kp1, descs1 = orb.detectAndCompute(im1,None)
-        kp2, descs2 = orb.detectAndCompute(im2,None)
+        self.Rmat = None
+        self.Tvec = None
 
+        self.goodkps = None
+
+        self.pts_ref = None
+        self.pts_frame = None
+    
+
+        self.focal_len = 1.0
+        self.pp = (0. ,0.)
+
+        self.RotX = 0.
+        self.RotY = 0.
+        self.RotZ = 0.
+        self.PosX = 0.
+        self.PosY = 0.
+        self.PosZ = 0.
+
+        self.eulerAngles = None
+
+        self.ref_homography = None
+        self.frame_homography = None
+
+        self.resampleFlag = False
+        self.interruptFlag = False
+
+    def featureEst(self):
+        orb = cv2.ORB_create()
+        self.Kp_ref, self.descs_ref = orb.detectAndCompute(self.ref_frame,None)
+        self.Kp_frame, self.descs_frame = orb.detectAndCompute(self.frame,None)
+
+    def featureMatch(self):
         matcher = cv2.BFMatcher()
-
-        matches = matcher.knnMatch(descs1, descs2, k=2)
+        matches = matcher.knnMatch(self.descs_ref, self.descs_frame, k=2)
 
         good = []
         pt1 = []
@@ -40,58 +83,62 @@ def odom(im1, im2):
         for i,(m,n) in enumerate(matches):
             if m.distance < 0.8*n.distance:
                 good.append(m)
-                pt2.append(kp2[m.trainIdx].pt)
-                pt1.append(kp1[m.queryIdx].pt)
+                pt2.append(self.Kp_frame[m.trainIdx].pt)
+                pt1.append(self.Kp_ref[m.queryIdx].pt)
 
-        pts1 = np.int32(pt1)
-        pts2 = np.int32(pt2)
-        F, mask = cv.findFundamentalMat(pts1,pts2,cv.FM_LMEDS)
+        self.goodkps = good
+        pts1 = np.float32(pt1)
+        pts2 = np.float32(pt2)
+        self.ref_kpmask = cv2.drawKeypoints(self.ref_frame, self.Kp_ref, self.ref_kpmask,color=(0,255,0), flags=cv2.DRAW_MATCHES_FLAGS_DEFAULT)
+        self.frame_kpmask = cv2.drawKeypoints(self.frame, self.Kp_frame, self.frame_kpmask,color=(0,255,0),flags=cv2.DRAW_MATCHES_FLAGS_DEFAULT)
+        #self.match_frame = cv2.drawMatchesKnn(self.ref_frame, self.Kp_ref ,self.frame, self.Kp_frame, good[:10], np.copy(self.match_frame), flags=2)
+
+        self.F, mask = cv.findFundamentalMat(pts1,pts2,cv.FM_LMEDS)
 
         pts1 = pts1[mask.ravel()==1]
         pts2 = pts2[mask.ravel()==1]
 
-        mask = np.zeros_like(im2)
-        for i in pts2:
-            im2 = cv.circle(im2, tuple(i),10, (0,255,0))
+        pts11 = pts1.reshape(-1,1,2)
+        pts22 = pts2.reshape(-1,1,2)
 
-        outimg = cv.add(im2, mask)
+        pts1_norm = cv2.undistortPoints(pts11, cameraMatrix=self.K, distCoeffs=self.distCoeff)
+        pts2_norm = cv2.undistortPoints(pts22, cameraMatrix=self.K, distCoeffs=self.distCoeff)
 
-        E,mask = cv.findEssentialMat(pts1, pts2, focal=focal_len, pp=pp, method=cv2.RANSAC,prob=0.99, threshold=1.0)
-        #r1, r2, t = cv.decomposeEssentialMat(E)
-        _,R,T,mask = cv.recoverPose(E,pts1,pts2,focal=focal_len,pp=pp)
+        self.pts_ref = pts1_norm
+        self.pts_frame = pts2_norm
 
-        geom_transf = np.hstack((R, T))
-        proj = np.dot(K,geom_transf)
-        
-        M_r = np.hstack((R, T))
+    def vectorizePose(self):
+        E,mask = cv.findEssentialMat(self.pts_ref, self.pts_frame, focal=1.0, pp=(0.,0.), method=cv2.RANSAC,prob=0.99, threshold=1.0)
+        r1, r2, t = cv.decomposeEssentialMat(E)
+        _,R,T,mask = cv.recoverPose(E, self.pts_ref, self.pts_frame, focal=1.0, pp=(0.,0.))
 
-        angles = cv.decomposeProjectionMatrix(proj)[-1]
-        
-        print(angles)
+        self.Rmat = R
+        self.Tvec = T
 
-        #point_3d = point_4d[:3, :].T
+    def geometricTransform(self):
+        M_r = np.hstack((self.Rmat, self.Tvec))
+        projMat = np.dot(self.K, M_r)
 
+        eulerAngles = cv2.decomposeProjectionMatrix(projMat)[-1]
+        self.RotX = eulerAngles[0]
+        self.Roty = eulerAngles[1]
+        self.Rotz = eulerAngles[2]
+        self.eulerAngles = eulerAngles
 
-
-        y_rot = math.asin(R[2][0])
-        y_rot_angle = y_rot *(180/3.1415)
-        x_rot = math.acos(R[2][2]/math.cos(y_rot))
-        z_rot = math.acos(R[0][0]/math.cos(y_rot))
-        x_rot_angle = x_rot *(180/3.1415)
-        z_rot_angle = z_rot *(180/3.1415)
-
-        if len(pts2)<10:
-            relocalizeFlag=True
-
-        return x_rot_angle, y_rot_angle, z_rot_angle, im2, relocalizeFlag
+    def poseTrack(self,ref_image,image):
+        self.ref_frame = ref_image
+        self.frame = image
 
 
-    except AttributeError as Atib:
-        print("\n\n\n----------ATR Interrupted----------\n\n\n")
-        return None, None, None, np.zeros_like(im2), False
-    except ValueError as Val:
-        print("\n\n\n----------VAL Interrupted----------\n\n\n")
-        return None, None, None, np.zeros_like(im2), False
+    def estimate(self):
+        self.featureEst()
+        self.featureMatch()
+        self.vectorizePose()
+        self.geometricTransform()
+
+        return self.eulerAngles
+
+
 
 _, ref_frame = cam.read()
 
@@ -103,32 +150,33 @@ i=0
 xr = 0
 yr = 0
 zr = 0
-while True:
-    _,frame = cam.read()
-    x,y,z,outimg, relocalize = odom(ref_frame,frame)
 
-    if relocalize==True:
-        print("RELOCALIZING")
-        ref_frame=frame
-        xr=x
-        yr=y
-        zr=z
-    print(type(x))
-    if x is not None:
-        print(x+xr,y+yr,z+zr)
-    xrot.append(x)
-    yrot.append(y)
-    zrot.append(z)
-    step.append(i)
-    i+=1
-    cv.imshow("debug_img",outimg)
-    k = cv2.waitKey(1)
+pose = PoseEstimate(K,distCoeffs)
+step = 0
+while True:
+    imbuf = imutils.rotate(im2,step)
+    pose.poseTrack(im2,imbuf)
+    angles = pose.estimate()
+
+    imR = pose.ref_kpmask
+    imL = pose.frame_kpmask
+    #match_img = cv2.drawMatchesKnn(pose.ref_kpmask, pose.Kp_ref, pose.frame_kpmask, pose.Kp_frame, pose.goodkps,None,flags=2)
+
+    print(np.transpose(angles))
+    cv2.namedWindow("Test")
+    cv2.imshow("Test", imR)
+
+    print(len(pose.pts_frame))
+
+    cv2.namedWindow("Main")
+    cv2.imshow("Main", imL)
+    step+=10
+    k = cv.waitKey(0)
+    if step>90:
+        print("Angular Overflow")
+        break
     if k%256 == 27:
         print("Escape hit, closing...")
         break
 
 cv.destroyAllWindows()
-plt.plot(step,xrot)
-plt.plot(step,yrot)
-plt.plot(step,zrot)
-plt.show()
