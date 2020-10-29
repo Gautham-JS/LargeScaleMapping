@@ -1,2 +1,2 @@
-# Large Scale Multi Robot Mapping toolkit.
+# Large scale Multi-Agent Mapping toolkit.
 This project is in Active Development and the repository is subject to change.
