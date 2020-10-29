@@ -1,12 +1,4 @@
-/*
- * Simple SFM example using OpenCV + GTSAM + PMVS2.
- * This code is based on material from
- *
- * - http://rpg.ifi.uzh.ch/visual_odometry_tutorial.html
- * - GTSAM example/SFMExample.cpp
- *
- * Nghia Ho
- */
+
 #include <opencv2/features2d.hpp>
 #include <opencv2/xfeatures2d.hpp>
 #include <opencv2/highgui.hpp>
@@ -73,7 +65,7 @@ struct SFM_Helper{
 
     struct Landmark{
         cv::Point3f pt;
-        int seen = 0; // how many cameras have seen this point
+        int seen = 0; 
     };
 
     std::vector<ImagePose> img_pose;
