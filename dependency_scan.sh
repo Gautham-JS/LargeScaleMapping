@@ -1,4 +1,4 @@
-
+#LSM, GAUTHAM J.S, 29,oct,2020
 echo "Finding Dependencies <viz toolkit>,<sfm pkg>,<calib3d pkg>,<cvcore>,<xfeatures2d>,<features2d>,<highgui>,<ceres solver>"
 
 r=`tput setaf 1`
