@@ -35,8 +35,8 @@ else
   echo "$g---> $pkgs FOUND w/ $lines copy$rst"
 fi
 echo;
-#find /lib* /usr/local/include/ /usr/include/ -name '*coreny.hpp*'
-lines=$(find /lib* /usr/local/include/ /usr/include/ -name '*coreny.hpp*' | wc -l)
+#find /lib* /usr/local/include/ /usr/include/ -name '*core.hpp*'
+lines=$(find /lib* /usr/local/include/ /usr/include/ -name '*core.hpp*' | wc -l)
 pkgs="core.hpp"
 echo;
 if [ "$lines" = "0" ]; then
