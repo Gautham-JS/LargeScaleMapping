@@ -369,10 +369,6 @@ class SFMtoolkit{
 };
 
 
-
-
-
-
 int main(int argc, char **argv){
     SFMtoolkit stk;
     stk.feature_proc();
