@@ -14,12 +14,14 @@ using namespace std;
 using namespace cv;
 
 const int IMAGE_DOWNSAMPLE = 1; 
-const double FOCAL_LENGTH = 2759 / IMAGE_DOWNSAMPLE; 
+const double FOCAL_LENGTH = 1600 / IMAGE_DOWNSAMPLE; 
 const int MIN_LANDMARK_SEEN = 3; 
 
-const std::string IMAGE_DIR = "/home/gautham/Documents/Codes/Datasets/SfM_quality_evaluation/Benchmarking_Camera_Calibration_2008/Herz-Jesus-P8/images/";
+const std::string IMAGE_DIR = "/home/gautham/Documents/Codes/Datasets/BlenderRender2/";
 
 const std::vector<std::string> IMAGES = {
+    "0001.jpg",
+    "0002.jpg",
     "0003.jpg",
     "0004.jpg",
     "0005.jpg",
@@ -92,12 +94,12 @@ void toPly(){
 class SFMtoolkit{
     public:
         SFM_metadata SFM;
-
         void feature_proc(){
             using namespace cv;
             using namespace cv::xfeatures2d;
 
             Ptr<AKAZE> feature = AKAZE::create();
+            //Ptr<ORB> feature = ORB::create(10000);
             Ptr<DescriptorMatcher> matcher = DescriptorMatcher::create("BruteForce-Hamming");
 
             namedWindow("img", WINDOW_NORMAL);
@@ -125,6 +127,7 @@ class SFMtoolkit{
             using namespace xfeatures2d;
             Ptr<DescriptorMatcher> matcher = DescriptorMatcher::create("BruteForce-Hamming");
             cout<<"CKPT 2 "<<endl;
+            int count = 0;
 
             for (size_t i=0; i < SFM.img_pose.size()-1; i++) {
                 auto &img_pose_i = SFM.img_pose[i];
@@ -152,14 +155,16 @@ class SFMtoolkit{
                     findFundamentalMat(src, dst, FM_RANSAC, 3.0, 0.99, mask);
 
                     Mat canvas = img_pose_i.img.clone();
-                    canvas.push_back(img_pose_j.img.clone());
+                    Mat buffer_canvas = img_pose_j.img.clone();
+                    cv::drawKeypoints(canvas, img_pose_i.kp, canvas,Scalar(255,0,0));
+                    cv::drawKeypoints(buffer_canvas, img_pose_j.kp, buffer_canvas,Scalar(0,0,255));
+                    canvas.push_back(buffer_canvas);
 
                     for (size_t k=0; k < mask.size(); k++) {
                         if (mask[k]) {
                             img_pose_i.kp_match_idx(i_kp[k], j) = j_kp[k];
                             img_pose_j.kp_match_idx(j_kp[k], i) = i_kp[k];
-
-                            line(canvas, src[k], dst[k] + Point2f(0, img_pose_i.img.rows), Scalar(0, 0, 255), 2);
+                            line(canvas, src[k], dst[k] + Point2f(0, img_pose_i.img.rows), Scalar(0, 255, 0), 1);
                         }
                     }
 
@@ -172,10 +177,14 @@ class SFMtoolkit{
                     cout << "Feature matching " << i << " " << j << " ==> " << good_matches << "/" << matches.size() << endl;
 
                     resize(canvas, canvas, canvas.size()/2);
-
-                    imshow("img", canvas);
-                    waitKey(100);
+                    if(count>0){
+                        cv::namedWindow("img");
+                        imshow("img", canvas);
+                        waitKey(1000);
+                    }
+                    count++;
                 }
+                    cv::destroyAllWindows();
             }
         }
 
