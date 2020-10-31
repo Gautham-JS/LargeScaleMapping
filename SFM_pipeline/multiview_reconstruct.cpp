@@ -11,12 +11,10 @@
 #include <fstream>
 #include <cassert>
 
+#include "meta.h"
+
 using namespace std;
 using namespace cv;
-
-const int IMAGE_DOWNSAMPLE = 1; 
-const double FOCAL_LENGTH = 1600 / IMAGE_DOWNSAMPLE; 
-const int MIN_LANDMARK_SEEN = 3; 
 
 const std::string IMAGE_DIR = "/home/gautham/Documents/Codes/Datasets/BlenderRender2/";
 
