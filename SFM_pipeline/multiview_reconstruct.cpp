@@ -17,6 +17,8 @@ using namespace std;
 using namespace cv;
 
 const std::string IMAGE_DIR = "/home/gautham/Documents/Codes/Datasets/BlenderRender2/";
+const std::string img_dir2 = "/home/gautham/Documents/SFM_example/ReconstructionDataSet/BoutevilleWindowDetail/testspace/*.JPG";
+const std::string img_dir3 = "/home/gautham/Documents/Codes/Datasets/BlenderRender2/*.jpg";
 
 const std::vector<std::string> IMAGES = {
     "0001.jpg",
@@ -27,6 +29,8 @@ const std::vector<std::string> IMAGES = {
     "0006.jpg",
     "0007.jpg"
 };
+
+vector<cv::String> impath;
 
 struct SFM_metadata{
     struct ImagePose{
@@ -89,7 +93,6 @@ void toPly(){
 
 
 
-
 class SFMtoolkit{
     public:
         SFM_metadata SFM;
@@ -103,11 +106,12 @@ class SFMtoolkit{
 
             namedWindow("img", WINDOW_NORMAL);
             cout<<"CKPT 1 "<<endl;
+            cv::glob(img_dir2, impath, false);
 
-            for (auto f : IMAGES) {
+            for (auto f : impath) {
                 SFM_metadata::ImagePose a;
 
-                Mat img = imread(IMAGE_DIR + f);
+                Mat img = imread(f);
                 assert(!img.empty());
 
                 resize(img, img, img.size()/IMAGE_DOWNSAMPLE);
