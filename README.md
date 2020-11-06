@@ -37,7 +37,7 @@ The Features we have detected till now are in the 2D plane
 Based on the feature tracking, we estimate how each feature has moved in one frame with respect to the previous frame.[4],[6]
 Based on this estimated movement and the fact each feature only varies from nth to (n+dn)th frame only if the surface feature is a part of a significant 3D surface.
 This mathematical model relates the features from one frame to another
-
+![](Media/3dtx.png)
 
 Input Image Sequences
 
