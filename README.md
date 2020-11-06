@@ -20,13 +20,24 @@ This project can solve all these challenges to a great extent and even offers ov
 4. While mapping depth images, camera might move to new areas before previous frames depth is mapped, which causes localization loss.
 
 Processing an entire image data for 3D reconstruction is computationally extremely heavy.
-Hence we use algorithm described by [5],ORB features to detect certain keypoints in image that describe most significant features in the image
+Hence we use algorithm described by [5],ORB/SIFT features to detect certain keypoints in image that describe most significant features in the image
 
 Once we have detected significant keypoints in an image, we can track these keypoints from one frame to another.
 We use a feature matching step to find out how each keypoint moved in the current frame wrt previous frame.
 
+Here, Red and Blue are features in 2 frames respectively and Green represents the one to one match.
+![](Media/multiview_30.gif)
 
-![Input Sequence](Media/multiview_30_ims.gif)
+
+![Input Sequence](Media/Sift_terrain_match.png)
+![Input Sequence](Media/featFlow.png)
+
+## 3D Transformation and Pose Estimation
+The Features we have detected till now are in the 2D plane
+Based on the feature tracking, we estimate how each feature has moved in one frame with respect to the previous frame.[4],[6]
+Based on this estimated movement and the fact each feature only varies from nth to (n+dn)th frame only if the surface feature is a part of a significant 3D surface.
+This mathematical model relates the features from one frame to another
+
 
 Input Image Sequences
 
