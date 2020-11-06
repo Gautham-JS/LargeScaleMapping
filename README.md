@@ -26,8 +26,6 @@ Once we have detected significant keypoints in an image, we can track these keyp
 We use a feature matching step to find out how each keypoint moved in the current frame wrt previous frame.
 
 Here, Red and Blue are features in 2 frames respectively and Green represents the one to one match.
-![](Media/multiview_30.gif)
-
 
 ![Input Sequence](Media/Sift_terrain_match.png)
 ![Input Sequence](Media/featFlow.png)
