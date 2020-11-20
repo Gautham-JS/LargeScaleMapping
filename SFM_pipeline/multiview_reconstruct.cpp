@@ -13,12 +13,13 @@
 
 #include "meta.h"
 
+
 using namespace std;
 using namespace cv;
 
 const std::string IMAGE_DIR = "/home/gautham/Documents/Codes/Datasets/BlenderRender2/";
-const std::string img_dir2 = "/home/gautham/Documents/SFM_example/ReconstructionDataSet/BoutevilleWindowDetail/testspace/*.JPG";
-const std::string img_dir3 = "/home/gautham/Documents/Codes/Datasets/BlenderRender2/*.jpg";
+const std::string img_dir2 = "/home/gautham/Documents/SFM_example/ReconstructionDataSet/MuratoCorsicaChurch/test/*.JPG";
+const std::string img_dir3 = "/home/gautham/Documents/Codes/Datasets/SfM_quality_evaluation/Benchmarking_Camera_Calibration_2008/Herz-Jesus-P8/images/buffer/*.jpg";
 
 const std::vector<std::string> IMAGES = {
     "0001.jpg",
@@ -140,7 +141,6 @@ class SFMtoolkit{
                     vector<Point2f> src, dst;
                     vector<uchar> mask;
                     vector<int> i_kp, j_kp;
-
 
                     matcher->knnMatch(img_pose_i.desc, img_pose_j.desc, matches, 2);
 
