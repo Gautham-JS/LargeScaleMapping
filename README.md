@@ -39,9 +39,9 @@ This mathematical model relates the features from one frame to another
 
 Input Image Sequences
 
-![](Media/multiview_30.gif)
+![](Media/output.gif)
 
-Dense PointCloud w/ CMVS reconstruction
+Dense PointCloud w/ Stereo reconstruction
 
 ## System Architecture
 
