@@ -36,8 +36,6 @@ Based on this estimated movement and the fact each feature only varies from nth 
 This mathematical model relates the features from one frame to another
 ![](Media/3dtx.png)
 
-Input Image Sequences
-
 ![](Media/output.gif)
 
 Dense PointCloud w/ Stereo reconstruction
