@@ -4,6 +4,18 @@
 #include <opencv2/highgui.hpp>
 #include <opencv2/opencv.hpp>
 #include <opencv2/viz.hpp>
+#include <opencv2/xfeatures2d/nonfree.hpp>
+
+
+#include <gtsam/geometry/Point2.h>
+#include <gtsam/inference/Symbol.h>
+#include <gtsam/slam/PriorFactor.h>
+#include <gtsam/slam/ProjectionFactor.h>
+#include <gtsam/slam/GeneralSFMFactor.h>
+#include <gtsam/nonlinear/NonlinearFactorGraph.h>
+#include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
+#include <gtsam/nonlinear/DoglegOptimizer.h>
+#include <gtsam/nonlinear/Values.h>
 
 #include <vector>
 #include <iostream>
@@ -17,19 +29,13 @@
 using namespace std;
 using namespace cv;
 
-const std::string IMAGE_DIR = "/home/gautham/Documents/Codes/Datasets/BlenderRender2/";
-const std::string img_dir2 = "/home/gautham/Documents/SFM_example/ReconstructionDataSet/MuratoCorsicaChurch/test/*.JPG";
-const std::string img_dir3 = "/home/gautham/Documents/Codes/Datasets/SfM_quality_evaluation/Benchmarking_Camera_Calibration_2008/Herz-Jesus-P8/images/buffer/*.jpg";
+const std::string IMAGE_DIR = "";
+const std::string img_dir3 = "/home/gautham/Documents/Datasets/Statue2/*.jpg";
+const std::string img_dir2 = "/home/gautham/Documents/Datasets/SfM_quality_evaluation/Benchmarking_Camera_Calibration_2008/fountain-P11/images/Testing/*.jpg";
 
-const std::vector<std::string> IMAGES = {
-    "0001.jpg",
-    "0002.jpg",
-    "0003.jpg",
-    "0004.jpg",
-    "0005.jpg",
-    "0006.jpg",
-    "0007.jpg"
-};
+
+std::vector<std::string> IMAGES;
+
 
 vector<cv::String> impath;
 
@@ -92,6 +98,162 @@ void toPly(){
 	outfile.close();
 }
 
+class GTSAMBundleAdjust{
+    public:
+        gtsam::Values output;
+        gtsam::Cal3_S2 K_mat;        
+        SFM_metadata SFM;
+
+        GTSAMBundleAdjust(SFM_metadata observations){
+            SFM = observations;
+        }
+
+        void FactorGraphOptimize(){
+            using namespace gtsam;
+            double cx = SFM.img_pose[0].img.size().width/2;
+            double cy = SFM.img_pose[0].img.size().height/2;
+
+            gtsam::Cal3_S2 K(FOCAL_LENGTH, FOCAL_LENGTH,0,cx,cy);
+
+            gtsam::noiseModel::Isotropic::shared_ptr measurement_noise = gtsam::noiseModel::Isotropic::Sigma(2,2.0);
+            gtsam::NonlinearFactorGraph graph;
+            gtsam::Values initial;
+
+            for(size_t i=0; i<SFM.img_pose.size(); i++){
+                auto &img_pose = SFM.img_pose[i];
+                gtsam::Rot3 R(
+                    img_pose.T.at<double>(0,0),
+                    img_pose.T.at<double>(0,1),
+                    img_pose.T.at<double>(0,2),
+
+                    img_pose.T.at<double>(1,0),
+                    img_pose.T.at<double>(1,1),
+                    img_pose.T.at<double>(1,2),
+
+                    img_pose.T.at<double>(2,0),
+                    img_pose.T.at<double>(2,1),
+                    img_pose.T.at<double>(2,2)
+                );
+                gtsam::Point3 t;
+                t(0) = img_pose.T.at<double>(0,3);
+                t(1) = img_pose.T.at<double>(1,3);
+                t(2) = img_pose.T.at<double>(2,3);
+
+                gtsam::Pose3 pose(R,t);
+
+                if(i==0){
+                    gtsam::noiseModel::Diagonal::shared_ptr pose_noise = gtsam::noiseModel::Diagonal::Sigmas((Vector(6) << Vector3::Constant(0.1), Vector3::Constant(0.1)).finished());
+                    graph.emplace_shared<gtsam::PriorFactor<gtsam::Pose3>>(gtsam::Symbol('x',0),pose,pose_noise);
+                }
+                initial.insert(gtsam::Symbol('x',i),pose);
+
+                for (size_t k=0; k < img_pose.kp.size(); k++) {
+                    if (img_pose.kp_3d_exist(k)) {
+                        size_t landmark_id = img_pose.kp_3d(k);
+
+                        if (SFM.landmark[landmark_id].seen >= MIN_LANDMARK_SEEN) {
+                            gtsam::Point2 pt;
+
+                            pt(0) = img_pose.kp[k].pt.x;
+                            pt(1) = img_pose.kp[k].pt.y;
+
+                            graph.emplace_shared<gtsam::GeneralSFMFactor2<gtsam::Cal3_S2>>(pt, measurement_noise, gtsam::Symbol('x', i), gtsam::Symbol('l', landmark_id), gtsam::Symbol('K', 0));
+                        }
+                    }
+                }
+            }
+
+            initial.insert(Symbol('K', 0), K);
+
+            noiseModel::Diagonal::shared_ptr cal_noise = noiseModel::Diagonal::Sigmas((Vector(5) << 100, 100, 0.01 /*skew*/, 100, 100).finished());
+            graph.emplace_shared<PriorFactor<Cal3_S2>>(Symbol('K', 0), K, cal_noise);
+
+            bool init_prior = false;
+
+            for (size_t i=0; i < SFM.landmark.size(); i++) {
+                if (SFM.landmark[i].seen >= MIN_LANDMARK_SEEN) {
+                    cv::Point3f &p = SFM.landmark[i].pt;
+
+                    initial.insert<Point3>(Symbol('l', i), Point3(p.x, p.y, p.z));
+
+                    if (!init_prior) {
+                        init_prior = true;
+
+                        noiseModel::Isotropic::shared_ptr point_noise = noiseModel::Isotropic::Sigma(3, 0.1);
+                        Point3 p(SFM.landmark[i].pt.x, SFM.landmark[i].pt.y, SFM.landmark[i].pt.z);
+                        graph.emplace_shared<PriorFactor<Point3>>(Symbol('l', i), p, point_noise);
+                    }
+                }
+            }
+
+            output = LevenbergMarquardtOptimizer(graph, initial).optimize();
+            output.print("");
+
+            cout << endl;
+            cout << "initial graph error = " << graph.error(initial) << endl;
+            cout << "final graph error = " << graph.error(output) << endl;
+            K_mat = K;
+        }
+
+        void PMVSformatting(){
+            using namespace gtsam;
+            Matrix3 K_refined = output.at<Cal3_S2>(Symbol('K', 0)).K();
+
+            cout << endl << "final camera matrix K" << endl << K_refined << endl;
+
+            K_refined(0, 0) *= IMAGE_DOWNSAMPLE;
+            K_refined(1, 1) *= IMAGE_DOWNSAMPLE;
+            K_refined(0, 2) *= IMAGE_DOWNSAMPLE;
+            K_refined(1, 2) *= IMAGE_DOWNSAMPLE;
+
+            system("mkdir -p root/visualize");
+            system("mkdir -p root/txt");
+            system("mkdir -p root/models");
+
+            ofstream option("root/options.txt");
+
+            option << "timages  -1 " << 0 << " " << (SFM.img_pose.size()-1) << endl;;
+            option << "oimages 0" << endl;
+            option << "level 1" << endl;
+
+            option.close();
+
+            for (size_t i=0; i < SFM.img_pose.size(); i++) {
+                Eigen::Matrix<double, 3, 3> R;
+                Eigen::Matrix<double, 3, 1> t;
+                Eigen::Matrix<double, 3, 4> P;
+                char str[256];
+
+                R = output.at<Pose3>(Symbol('x', i)).rotation().matrix();
+                t = output.at<Pose3>(Symbol('x', i)).translation().matrix();
+
+                P.block(0, 0, 3, 3) = R.transpose();
+                P.col(3) = -R.transpose()*t;
+                P = K_refined*P;
+
+                sprintf(str, "cp -f %s/%s root/visualize/%04d.jpg", IMAGE_DIR.c_str(), IMAGES[i].c_str(), (int)i);
+                system(str);
+                //imwrite(str, SFM.img_pose[i].img);
+
+
+                sprintf(str, "root/txt/%04d.txt", (int)i);
+                ofstream out(str);
+
+                out << "CONTOUR" << endl;
+
+                for (int j=0; j < 3; j++) {
+                    for (int k=0; k < 4; k++) {
+                        out << P(j, k) << " ";
+                    }
+                    out << endl;
+                }
+            }
+
+            cout << endl;
+            cout << "Ready to compute PMVS2, options saved at root dir" << endl;
+        }
+};
+
 
 
 class SFMtoolkit{
@@ -101,8 +263,10 @@ class SFMtoolkit{
             using namespace cv;
             using namespace cv::xfeatures2d;
 
-            Ptr<AKAZE> feature = AKAZE::create();
-            //Ptr<ORB> feature = ORB::create(10000);
+            //Ptr<AKAZE> feature = AKAZE::create();
+            //Ptr<SIFT> feature = SIFT::create();
+            Ptr<ORB> feature = ORB::create(10000);
+            //Ptr<SURF> feature = SURF::create();
             Ptr<DescriptorMatcher> matcher = DescriptorMatcher::create("BruteForce-Hamming");
 
             namedWindow("img", WINDOW_NORMAL);
@@ -110,6 +274,8 @@ class SFMtoolkit{
             cv::glob(img_dir2, impath, false);
 
             for (auto f : impath) {
+                cout<<"Image ::: "<<f<<endl;
+                IMAGES.push_back(f);
                 SFM_metadata::ImagePose a;
 
                 Mat img = imread(f);
@@ -129,7 +295,7 @@ class SFMtoolkit{
         void FeatureMatch(){
             using namespace cv;
             using namespace xfeatures2d;
-            Ptr<DescriptorMatcher> matcher = DescriptorMatcher::create("BruteForce-Hamming");
+            Ptr<DescriptorMatcher> matcher = DescriptorMatcher::create(DescriptorMatcher::BRUTEFORCE_HAMMING);
             cout<<"CKPT 2 "<<endl;
             int count = 0;
 
@@ -172,9 +338,6 @@ class SFMtoolkit{
                     }
 
                     int good_matches = sum(mask)[0];
-                    if(good_matches<10){
-                        continue;
-                    }
                     assert(good_matches >= 10);
 
                     cout << "Feature matching " << i << " " << j << " ==> " << good_matches << "/" << matches.size() << endl;
@@ -235,7 +398,7 @@ class SFMtoolkit{
                 Mat E = findEssentialMat(dst, src, FOCAL_LENGTH, pp, RANSAC, 0.999, 1.0, mask);
                 Mat local_R, local_t;
 
-                cout<<E<<endl;
+                //cout<<E<<endl;
 
                 recoverPose(E, dst, src, local_R, local_t, FOCAL_LENGTH, pp, mask);
 
@@ -271,9 +434,10 @@ class SFMtoolkit{
 
                     vector<Point3f> new_pts;
                     vector<Point3f> existing_pts;
-
+                    cout<<"KP USED size : "<<kp_used.size()<<endl;
                     for (size_t j=0; j < kp_used.size(); j++) {
                         size_t k = kp_used[j];
+                        //cout<<"  Mask.at j : "<<mask.at<uchar>(j)<<" prev.kp_ex : "<<prev.kp_match_exist(k, i+1)<<" prev.kp3d_ex : "<<prev.kp_3d_exist(k)<<endl;
                         if (mask.at<uchar>(j) && prev.kp_match_exist(k, i+1) && prev.kp_3d_exist(k)) {
                             Point3f pt3d;
 
@@ -283,12 +447,16 @@ class SFMtoolkit{
 
                             size_t idx = prev.kp_3d(k);
                             Point3f avg_landmark = SFM.landmark[idx].pt / (SFM.landmark[idx].seen - 1);
-
+                            count++;
                             new_pts.push_back(pt3d);
                             existing_pts.push_back(avg_landmark);
                         }
                     }
-
+                    cout<<"NEW point size is as : "<<new_pts.size()<<endl;
+                    if(new_pts.size()<=0){
+                        cout<<"SKIPPING FRAME"<<endl;
+                        continue;
+                    } 
                     for (size_t j=0; j < new_pts.size()-1; j++) {
                         for (size_t k=j+1; k< new_pts.size(); k++) {
                             double s = norm(existing_pts[j] - existing_pts[k]) / norm(new_pts[j] - new_pts[k]);
@@ -377,6 +545,10 @@ int main(int argc, char **argv){
     stk.feature_proc();
     stk.FeatureMatch();
     stk.sfm_reconstruct();
+
+    GTSAMBundleAdjust gtb(stk.SFM);
+    gtb.FactorGraphOptimize();
+    gtb.PMVSformatting();
     cout<<"EXECUTED"<<endl;
 	return 0;
 }
