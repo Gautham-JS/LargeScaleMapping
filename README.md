@@ -2,7 +2,7 @@
 **< NOTE : This project is in Active Development and the repository is subject to change. >**
 
 ## File Structure
-Source file for SFM process : 
+Source file for SFM 3D reconstruction : 
 ```
 SFM_pipelime/multiview_reconstruct.cpp
 ```
