@@ -28,7 +28,6 @@ We use a feature matching step to find out how each keypoint moved in the curren
 Here, Red and Blue are features in 2 frames respectively and Green represents the one to one match.
 
 ![Input Sequence](Media/Sift_terrain_match.png)
-![Input Sequence](Media/featFlow.png)
 
 ## 3D Transformation and Pose Estimation
 The Features we have detected till now are in the 2D plane
