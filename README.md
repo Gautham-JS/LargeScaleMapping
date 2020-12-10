@@ -42,16 +42,4 @@ Input Image Sequences
 
 Dense PointCloud w/ Stereo reconstruction
 
-## System Architecture
-
-![](Media/sumn.png)
-
-
-ROS Network Structure
-
-
-![](Media/system_arch.png)
-
-
-Basestation Software Architecture
 
