@@ -1,6 +1,26 @@
 # Large scale Multi-Agent Mapping toolkit.
 This project is in Active Development and the repository is subject to change.
 
+## File Structure
+Source file for SFM process : 
+```
+SFM_pipelime/multiview_reconstruct.cpp
+```
+The metadata such as Image Focal Lengths, Downscale factor can be set in ```SFM_pipeline/meta.h``` the whole process can be compiled using the shell script ```./SFM_pipeline/MVRcompile.sh```.
+
+Source file for Stereo Processing : 
+```
+Stereo_pipeline/Stereo_matching.py
+```
+Stereo is recommended if the input images are having fixed baseline distance and real time processing is preffered.
+## To be added
+1. PCL C++ support to natively support pointcloud view.
+2. ROS integration.
+3. CMAKE/Catkin build structure.
+4. Qt+OpenGL GUI with plugins
+5. Instance segmentation on pointclouds
+
+## Underlying Working Process
 This project can solve all these challenges to a great extent and even offers over the top functionality. Using the presented approach we can complete the following objectives:
 1. The image sequence coming from the camera is sufficient for extracting most valuable informations required by a fully autonomous robotic architecture. These quantities include:
   * Depth in 2D image, (x,y)-->(x,y,z)
