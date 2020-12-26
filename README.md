@@ -1,6 +1,26 @@
 # Large scale Multi-Agent Mapping toolkit.
-This project is in Active Development and the repository is subject to change.
+**< NOTE : This project is in Active Development and the repository is subject to change. >**
 
+## File Structure
+Source file for SFM 3D reconstruction : 
+```
+SFM_pipelime/multiview_reconstruct.cpp
+```
+The metadata such as Image Focal Lengths, Downscale factor can be set in ```SFM_pipeline/meta.h``` the whole process can be compiled using the shell script ```./SFM_pipeline/MVRcompile.sh```.
+
+Source file for Stereo Processing : 
+```
+Stereo_pipeline/Stereo_matching.py
+```
+Stereo is recommended if the input images are having fixed baseline distance and real time processing is preffered.
+## To be added
+1. PCL C++ support to natively support pointcloud view.
+2. ROS integration.
+3. CMAKE/Catkin build structure.
+4. Qt+OpenGL GUI with plugins
+5. Instance segmentation on pointclouds
+
+## Underlying Working Process
 This project can solve all these challenges to a great extent and even offers over the top functionality. Using the presented approach we can complete the following objectives:
 1. The image sequence coming from the camera is sufficient for extracting most valuable informations required by a fully autonomous robotic architecture. These quantities include:
   * Depth in 2D image, (x,y)-->(x,y,z)
@@ -28,7 +48,6 @@ We use a feature matching step to find out how each keypoint moved in the curren
 Here, Red and Blue are features in 2 frames respectively and Green represents the one to one match.
 
 ![Input Sequence](Media/Sift_terrain_match.png)
-![Input Sequence](Media/featFlow.png)
 
 ## 3D Transformation and Pose Estimation
 The Features we have detected till now are in the 2D plane
@@ -37,22 +56,8 @@ Based on this estimated movement and the fact each feature only varies from nth 
 This mathematical model relates the features from one frame to another
 ![](Media/3dtx.png)
 
-Input Image Sequences
-
 ![](Media/output.gif)
 
 Dense PointCloud w/ Stereo reconstruction
 
-## System Architecture
-
-![](Media/sumn.png)
-
-
-ROS Network Structure
-
-
-![](Media/system_arch.png)
-
-
-Basestation Software Architecture
 
