@@ -1,4 +1,9 @@
 #!/usr/bin/env python
+'''
+-->Gautham J.S, 26/12/2020
+A rosified implementation of
+Visual Odometry + Stereo Reconstruction + P2P-ICP transformation
+'''
 import numpy as np
 import cv2
 import os
