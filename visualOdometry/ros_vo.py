@@ -38,6 +38,9 @@ class PoseGraphOptimizer:
         self.pcdBuffer = []
         self.downSampleFactor = downsamplefactor
 
+        self.max_correspondence_distance_coarse = self.downSampleFactor * 15
+        self.max_correspondence_distance_fine = self.downSampleFactor * 1.5
+
         self.pPoints = None
         self.pR_ = None
         self.pt_ = None
@@ -60,7 +63,10 @@ class PoseGraphOptimizer:
         self.Pcd = pcl
         self.pcdBuffer.append(self.Pcd)
     
-    def pairwiseRegistration(self, source, target, max_correspondence_distance_coarse, max_correspondence_distance_fine):
+    def pairwiseRegistration(self, source, target):
+        max_correspondence_distance_coarse = self.max_correspondence_distance_coarse
+        max_correspondence_distance_fine = self.max_correspondence_distance_fine
+
         icp_coarse = o3d.pipelines.registration.registration_icp(
             source, target, max_correspondence_distance_coarse, np.identity(4),
             o3d.pipelines.registration.TransformationEstimationPointToPlane())
@@ -75,6 +81,8 @@ class PoseGraphOptimizer:
         return transformation_icp, information_icp
 
     def fullRegistration(self,pcds, max_correspondence_distance_coarse, max_correspondence_distance_fine):
+        max_correspondence_distance_coarse = self.max_correspondence_distance_coarse
+        max_correspondence_distance_fine = self.max_correspondence_distance_fine
         pose_graph = o3d.pipelines.registration.PoseGraph()
         odometry = np.identity(4)
         pose_graph.nodes.append(o3d.pipelines.registration.PoseGraphNode(odometry))
