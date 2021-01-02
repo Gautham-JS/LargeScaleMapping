@@ -15,7 +15,7 @@ using namespace cv;
 class visualOdometry{
     public:
         int seqNo;
-        double baseline;
+        double baseline = 0.54;
 
         string absPath;
         const char* lFptr; const char* rFptr;
@@ -34,6 +34,8 @@ class visualOdometry{
         vector<Point2f> inlierReferencePyrLKPts;
         Mat canvas = Mat::zeros(600,600, CV_8UC3);
 
+        Mat ret;
+
         visualOdometry(int Seq, const char*Lfptr, const char*Rfptr){
             lFptr = Lfptr;
             rFptr = Rfptr;
@@ -43,7 +45,7 @@ class visualOdometry{
                             vector<Point3f>&ref3dPts, 
                             vector<Point2f>&ref2dPts){
             
-            Ptr<FeatureDetector> detector = xfeatures2d::SIFT::create(1000);
+            Ptr<FeatureDetector> detector = xfeatures2d::SURF::create(200);
 
             if(!im1.data || !im2.data){
                 cout<<"NULL IMG"<<endl;
@@ -82,14 +84,12 @@ class visualOdometry{
             P2.at<double>(0,0) = 1; P2.at<double>(1,1) = 1; P2.at<double>(2,2) = 1;
             P2.at<double>(0,3) = -baseline;
 
-            cout<<K.at<double>(0,0)<<endl;
-
-
             P1 = K*P1;
             P2 = K*P2;
 
             Mat est3d;
             triangulatePoints(P1, P2, pt1, pt2, est3d);
+            //cout<<est3d.size()<<endl;
 
             for(int i=0; i<est3d.cols; i++){
                 Point3f localpt;
@@ -98,6 +98,15 @@ class visualOdometry{
                 localpt.z = est3d.at<float>(2,i) / est3d.at<float>(3,i);
                 pts3d.emplace_back(localpt);
             }
+
+            vector<Point2f> reprojection;
+            for(int k=0; k<pts3d.size(); k++){
+                Point2f projection; Point3f pt3d = pts3d[k];
+                projection.x = pt3d.x; projection.y = pt3d.y;
+                reprojection.push_back(projection);
+            }
+            //cout<<reprojection.size()<<" PTSIZE "<<pt1.size()<<endl;
+            ret = drawDeltas(im1, pt1, reprojection);
 
             ref3dPts = pts3d;
             ref2dPts = pt1;
@@ -160,6 +169,10 @@ class visualOdometry{
                 if(!inRange){res.push_back(i);}
             }
             return res;
+        }
+
+        void repjojectionError(Mat im, vector<Point2f> pt2d, vector<Point3f>pts3d){
+            
         }
 
 
@@ -235,11 +248,16 @@ class visualOdometry{
                 Mat distCoeffs = Mat::zeros(4,1,CV_64F);
                 Mat rvec, tvec; vector<int> inliers;
 
-                cout<<refPts3d.size()<<endl;
+                //cout<<refPts3d.size()<<endl;
+                cout<<refFeatures.size()<<" "<<inlierReferencePyrLKPts.size()<<" "<<refPts3d.size()<<endl;
 
-                solvePnPRansac(refPts3d, refFeatures, K, distCoeffs, rvec, tvec, false,100, 8.0, 0.99, inliers);
+                solvePnPRansac(refPts3d, refFeatures, K, distCoeffs, rvec, tvec, false,100,8.0, 0.99, inliers);
+                if(inliers.size()<10){
+                    cout<<"Low inlier count at "<<inliers.size()<<", skipping frame "<<iter<<endl;
+                    continue;
+                }
                 Mat R;
-                //cout<<"Ttxp : "<<tvec.t()<<endl;
+                cout<<"Ttxp : "<<tvec.t()<<endl;
                 Rodrigues(rvec, R);
 
                 R = R.t();
@@ -254,21 +272,28 @@ class visualOdometry{
                 Mat i1 = loadImageL(iter); Mat i2 = loadImageR(iter);
 
                 relocalizeFrames(0, i1, i2, inv_transform, features, pts3d);
-
                 referenceImg = currentImage;
 
                 t.convertTo(t, CV_32F);
-                cout<<refFeatures.size()<<" "<<inlierReferencePyrLKPts.size()<<endl;
-                Mat frame = drawDeltas(currentImage, features, refFeatures);
+                Mat frame = drawDeltas(currentImage, inlierReferencePyrLKPts, refFeatures);
+
+                Point2f center = Point2f(int(t.at<float>(0)) + 300, int(t.at<float>(2)) + 100);
+                circle(canvas, center ,1, Scalar(0,0,255), 2);
+                rectangle(canvas, Point2f(10, 30), Point2f(550, 50),  Scalar(0,0,0), cv::FILLED);
+
                 imshow("frame", frame);
-                waitKey(100);
+                imshow("trajectory", canvas);
+                int k = waitKey(100);
+                if (k=='q'){
+                    break;
+                }
             }
         }
 };
 
 int main(){
-    const char* impathL = "/home/gautham/Documents/Datasets/dataset/sequences/00//image_0/%0.6d.png";
-    const char* impathR = "/home/gautham/Documents/Datasets/dataset/sequences/00//image_1/%0.6d.png";
+    const char* impathL = "/home/gautham/Documents/Datasets/dataset/sequences/00/image_0/%0.6d.png";
+    const char* impathR = "/home/gautham/Documents/Datasets/dataset/sequences/00/image_1/%0.6d.png";
 
     vector<Point2f> ref2d; vector<Point3f> ref3d;
 
