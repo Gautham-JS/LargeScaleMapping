@@ -1,4 +1,5 @@
 #include <bits/stdc++.h>
+#include "Eigen/Core"
 
 #include <opencv2/core.hpp>
 #include <opencv2/features2d.hpp>
@@ -8,9 +9,35 @@
 #include "opencv2/highgui/highgui.hpp"
 #include <opencv2/opencv.hpp>
 #include <opencv2/features2d/features2d.hpp>
+#include <opencv2/core/eigen.hpp>
+
+#include "g2o/core/sparse_optimizer.h"
+#include "g2o/core/block_solver.h"
+#include "g2o/core/solver.h"
+#include "g2o/core/robust_kernel_impl.h"
+#include "g2o/core/optimization_algorithm_levenberg.h"
+#include "g2o/solvers/cholmod/linear_solver_cholmod.h"
+#include "g2o/solvers/dense/linear_solver_dense.h"
+#include "g2o/types/sba/types_six_dof_expmap.h"
+#include "g2o/types/slam3d/edge_xyz_prior.h"
+#include "g2o/types/slam3d/vertex_se3.h"
+#include "g2o/types/slam3d/vertex_pointxyz.h"
+#include "g2o/types/slam3d/edge_se3_pointxyz.h"
+//#include "edge_se3exp_pointxyz_prior.h"
+#include "g2o/solvers/structure_only/structure_only_solver.h"
+
+
 
 using namespace std;
 using namespace cv;
+using namespace g2o;
+
+struct FrameMetedata{
+    int ID = -1;
+    vector<Point2f> inliers;
+    vector<Point3f> projection;
+    Mat K, rvec, tvec, R,t;
+};
 
 class visualOdometry{
     public:
@@ -36,9 +63,16 @@ class visualOdometry{
 
         Mat ret;
 
+        std::queue<FrameMetedata> BAwindowQueue;
+
         visualOdometry(int Seq, const char*Lfptr, const char*Rfptr){
+            cout<<"\n\nINITIALIZING VISUAL ODOMETRY PIPELINE...\n\n"<<endl;
             lFptr = Lfptr;
             rFptr = Rfptr;
+        }
+
+        ~visualOdometry(){
+            cout<<"\n\nDESTRUCTOR CALLED, TERMINATING PROCESS\n"<<endl;
         }
 
         void stereoTriangulate(Mat im1, Mat im2, 
@@ -46,7 +80,7 @@ class visualOdometry{
                             vector<Point2f>&ref2dPts){
             
             Ptr<FeatureDetector> detector = xfeatures2d::SURF::create(200);
-
+            //Ptr<FeatureDetector> detector = BRISK::create();
             if(!im1.data || !im2.data){
                 cout<<"NULL IMG"<<endl;
                 return;
@@ -99,14 +133,15 @@ class visualOdometry{
                 pts3d.emplace_back(localpt);
             }
 
+            
             vector<Point2f> reprojection;
             for(int k=0; k<pts3d.size(); k++){
                 Point2f projection; Point3f pt3d = pts3d[k];
                 projection.x = pt3d.x; projection.y = pt3d.y;
-                reprojection.push_back(projection);
+                reprojection.emplace_back(projection);
             }
             //cout<<reprojection.size()<<" PTSIZE "<<pt1.size()<<endl;
-            ret = drawDeltas(im1, pt1, reprojection);
+            ret = drawDeltas(im2, pt1, reprojection);
 
             ref3dPts = pts3d;
             ref2dPts = pt1;
@@ -141,9 +176,9 @@ class visualOdometry{
 
             for(int j=0; j<refPts.size(); j++){
                 if(Idx[j]==1){
-                    inlierRefPts.push_back(refPts[j]);
-                    ref3dretPts.push_back(ref3dpts[j]);
-                    refRetpts.push_back(trackPts[j]);
+                    inlierRefPts.emplace_back(refPts[j]);
+                    ref3dretPts.emplace_back(ref3dpts[j]);
+                    refRetpts.emplace_back(trackPts[j]);
                 }
             }
             //refRetpts = inlierTracked;
@@ -166,7 +201,7 @@ class visualOdometry{
                     }
                 }
 
-                if(!inRange){res.push_back(i);}
+                if(!inRange){res.emplace_back(i);}
             }
             return res;
         }
@@ -249,36 +284,61 @@ class visualOdometry{
                 Mat rvec, tvec; vector<int> inliers;
 
                 //cout<<refPts3d.size()<<endl;
-                cout<<refFeatures.size()<<" "<<inlierReferencePyrLKPts.size()<<" "<<refPts3d.size()<<endl;
+                // cout<<refFeatures.size()<<" "<<inlierReferencePyrLKPts.size()<<" "<<refPts3d.size()<<endl;
 
-                solvePnPRansac(refPts3d, refFeatures, K, distCoeffs, rvec, tvec, false,100,8.0, 0.99, inliers);
-                if(inliers.size()<10){
-                    cout<<"Low inlier count at "<<inliers.size()<<", skipping frame "<<iter<<endl;
-                    continue;
-                }
+                solvePnPRansac(refPts3d, refFeatures, K, distCoeffs, rvec, tvec, false,100,4.0, 0.99, inliers);
                 Mat R;
-                cout<<"Ttxp : "<<tvec.t()<<endl;
                 Rodrigues(rvec, R);
+
+                Mat Rba, tba;
+                R.copyTo(Rba); tvec.copyTo(tba);
+
+                FrameMetedata* meta = new FrameMetedata;
+                meta->ID = iter;
+                meta->inliers = refFeatures;
+                meta->K = K;
+                meta->projection = refPts3d;
+                meta->rvec = rvec;
+                meta->R = R;
+                BundleAdjust3d2d(refFeatures, refPts3d, K, Rba, tba);
 
                 R = R.t();
                 Mat t = -R*tvec;
+
+                Rba = Rba.t();
+                tba = -Rba*tba;
 
                 Mat inv_transform = Mat::zeros(3,4, CV_64F);
                 R.col(0).copyTo(inv_transform.col(0));
                 R.col(1).copyTo(inv_transform.col(1));
                 R.col(2).copyTo(inv_transform.col(2));
                 t.copyTo(inv_transform.col(3));
+                
 
                 Mat i1 = loadImageL(iter); Mat i2 = loadImageR(iter);
 
                 relocalizeFrames(0, i1, i2, inv_transform, features, pts3d);
+
+                vector<Point3f> test3d;
+
+                //MonocularTriangulate(currentImage, referenceImg, refFeatures, inlierReferencePyrLKPts, test3d);
+
                 referenceImg = currentImage;
 
+                if(inliers.size()<10){
+                    cout<<"Low inlier count at "<<inliers.size()<<", skipping frame "<<iter<<endl;
+                    continue;
+                }
+
                 t.convertTo(t, CV_32F);
+                tba.convertTo(tba, CV_32F);
+
                 Mat frame = drawDeltas(currentImage, inlierReferencePyrLKPts, refFeatures);
 
                 Point2f center = Point2f(int(t.at<float>(0)) + 300, int(t.at<float>(2)) + 100);
-                circle(canvas, center ,1, Scalar(0,0,255), 2);
+                Point2f centerBA = Point2f(int(tba.at<float>(0)) + 300, int(tba.at<float>(2)) + 100);
+                circle(canvas, center ,1, Scalar(0,0,255), 1);
+                circle(canvas, centerBA ,1, Scalar(0,255,0), 1);
                 rectangle(canvas, Point2f(10, 30), Point2f(550, 50),  Scalar(0,0,0), cv::FILLED);
 
                 imshow("frame", frame);
@@ -289,7 +349,73 @@ class visualOdometry{
                 }
             }
         }
+
+/*-------------------------------------EXPERIMENTAL SHIT BEGINS HERE-------------------------------------------------------------*/
+    void BundleAdjust3d2d(vector<Point2f>points_2d, vector<Point3f>points_3d, Mat&K, Mat&R, Mat&t){
+        typedef BlockSolver<BlockSolverTraits<6,3>>block;   
+        typedef LinearSolverDense<block::PoseMatrixType> linearSolver;
+
+        auto solver = new g2o::OptimizationAlgorithmLevenberg(
+            g2o::make_unique<block>(g2o::make_unique<linearSolver>())
+        );
+
+        SparseOptimizer optimizer;
+        optimizer.initializeOptimization();
+        optimizer.setAlgorithm(solver);
+        optimizer.setVerbose(true);
+
+        VertexSE3Expmap* pose = new VertexSE3Expmap();
+        
+        Eigen::Matrix3d Rmatrix;
+        Rmatrix<<R.at<double> ( 0,0 ), R.at<double> ( 0,1 ), R.at<double> ( 0,2 ),
+               R.at<double> ( 1,0 ), R.at<double> ( 1,1 ), R.at<double> ( 1,2 ),
+               R.at<double> ( 2,0 ), R.at<double> ( 2,1 ), R.at<double> ( 2,2 );
+        
+        pose->setId(0);
+        pose->setEstimate(SE3Quat(Rmatrix, Eigen::Vector3d(t.at<double>(0,0), t.at<double>(1,0), t.at<double>(2,0))));
+        
+        int count=1;
+        optimizer.addVertex(pose);
+        for(const Point3f p: points_3d){
+            VertexSBAPointXYZ* point = new VertexSBAPointXYZ();
+            point->setId(count);
+            point->setEstimate(Eigen::Vector3d(p.x, p.y, p.z));
+            point->setMarginalized(true);
+            optimizer.addVertex(point);
+            count++;
+        }
+
+        CameraParameters* cam = new CameraParameters(
+            K.at<double>(0,0), Eigen::Vector2d(K.at<double>(0,2), K.at<double>(1,2)), 0
+        );
+
+        cam->setId(0);
+        optimizer.addParameter(cam);
+
+        int edgeCount = 1;
+        for(const Point2f pt: points_2d){
+            EdgeProjectXYZ2UV* edge = new EdgeProjectXYZ2UV();
+            edge->setId(edgeCount);
+            edge->setVertex(0,  dynamic_cast<g2o::VertexSBAPointXYZ*> ( optimizer.vertex(edgeCount)));
+            edge->setVertex(1, pose);
+            edge->setMeasurement(Eigen::Vector2d(pt.x, pt.y));
+            edge->setParameterId(0,0);
+            edge->setInformation(Eigen::Matrix2d::Identity());
+            optimizer.addEdge(edge);
+            edgeCount++;
+        }
+        //cout<<"T before="<<endl<<Eigen::Isometry3d ( pose->estimate() ).matrix() <<endl;
+        optimizer.initializeOptimization();
+        optimizer.optimize(10);
+
+        //cout<<"T after="<<endl<<Eigen::Isometry3d ( pose->estimate() ).matrix() <<endl;
+        SE3Quat postpose = pose->estimate();
+        Eigen::Vector3d trans = postpose.translation();
+        eigen2cv(trans, t);
+        optimizer.clear();
+    }
 };
+
 
 int main(){
     const char* impathL = "/home/gautham/Documents/Datasets/dataset/sequences/00/image_0/%0.6d.png";

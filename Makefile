@@ -130,17 +130,43 @@ depend:
 .PHONY : depend
 
 #=============================================================================
-# Target rules for targets named VisualOdometry
+# Target rules for targets named BoWtest
 
 # Build rule for target.
-VisualOdometry: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 VisualOdometry
-.PHONY : VisualOdometry
+BoWtest: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 BoWtest
+.PHONY : BoWtest
 
 # fast build rule for target.
-VisualOdometry/fast:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/VisualOdometry.dir/build.make CMakeFiles/VisualOdometry.dir/build
-.PHONY : VisualOdometry/fast
+BoWtest/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/BoWtest.dir/build.make CMakeFiles/BoWtest.dir/build
+.PHONY : BoWtest/fast
+
+#=============================================================================
+# Target rules for targets named visualOdometry
+
+# Build rule for target.
+visualOdometry: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 visualOdometry
+.PHONY : visualOdometry
+
+# fast build rule for target.
+visualOdometry/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/visualOdometry.dir/build.make CMakeFiles/visualOdometry.dir/build
+.PHONY : visualOdometry/fast
+
+#=============================================================================
+# Target rules for targets named bundleAdjust
+
+# Build rule for target.
+bundleAdjust: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 bundleAdjust
+.PHONY : bundleAdjust
+
+# fast build rule for target.
+bundleAdjust/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/bundleAdjust.dir/build.make CMakeFiles/bundleAdjust.dir/build
+.PHONY : bundleAdjust/fast
 
 visualOdometry/VisualOdometry.o: visualOdometry/VisualOdometry.cpp.o
 
@@ -148,7 +174,7 @@ visualOdometry/VisualOdometry.o: visualOdometry/VisualOdometry.cpp.o
 
 # target to build an object file
 visualOdometry/VisualOdometry.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/VisualOdometry.dir/build.make CMakeFiles/VisualOdometry.dir/visualOdometry/VisualOdometry.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/visualOdometry.dir/build.make CMakeFiles/visualOdometry.dir/visualOdometry/VisualOdometry.cpp.o
 .PHONY : visualOdometry/VisualOdometry.cpp.o
 
 visualOdometry/VisualOdometry.i: visualOdometry/VisualOdometry.cpp.i
@@ -157,7 +183,7 @@ visualOdometry/VisualOdometry.i: visualOdometry/VisualOdometry.cpp.i
 
 # target to preprocess a source file
 visualOdometry/VisualOdometry.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/VisualOdometry.dir/build.make CMakeFiles/VisualOdometry.dir/visualOdometry/VisualOdometry.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/visualOdometry.dir/build.make CMakeFiles/visualOdometry.dir/visualOdometry/VisualOdometry.cpp.i
 .PHONY : visualOdometry/VisualOdometry.cpp.i
 
 visualOdometry/VisualOdometry.s: visualOdometry/VisualOdometry.cpp.s
@@ -166,8 +192,62 @@ visualOdometry/VisualOdometry.s: visualOdometry/VisualOdometry.cpp.s
 
 # target to generate assembly for a file
 visualOdometry/VisualOdometry.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/VisualOdometry.dir/build.make CMakeFiles/VisualOdometry.dir/visualOdometry/VisualOdometry.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/visualOdometry.dir/build.make CMakeFiles/visualOdometry.dir/visualOdometry/VisualOdometry.cpp.s
 .PHONY : visualOdometry/VisualOdometry.cpp.s
+
+visualOdometry/bagOfWordsDetector.o: visualOdometry/bagOfWordsDetector.cpp.o
+
+.PHONY : visualOdometry/bagOfWordsDetector.o
+
+# target to build an object file
+visualOdometry/bagOfWordsDetector.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/BoWtest.dir/build.make CMakeFiles/BoWtest.dir/visualOdometry/bagOfWordsDetector.cpp.o
+.PHONY : visualOdometry/bagOfWordsDetector.cpp.o
+
+visualOdometry/bagOfWordsDetector.i: visualOdometry/bagOfWordsDetector.cpp.i
+
+.PHONY : visualOdometry/bagOfWordsDetector.i
+
+# target to preprocess a source file
+visualOdometry/bagOfWordsDetector.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/BoWtest.dir/build.make CMakeFiles/BoWtest.dir/visualOdometry/bagOfWordsDetector.cpp.i
+.PHONY : visualOdometry/bagOfWordsDetector.cpp.i
+
+visualOdometry/bagOfWordsDetector.s: visualOdometry/bagOfWordsDetector.cpp.s
+
+.PHONY : visualOdometry/bagOfWordsDetector.s
+
+# target to generate assembly for a file
+visualOdometry/bagOfWordsDetector.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/BoWtest.dir/build.make CMakeFiles/BoWtest.dir/visualOdometry/bagOfWordsDetector.cpp.s
+.PHONY : visualOdometry/bagOfWordsDetector.cpp.s
+
+visualOdometry/bundleAdjust.o: visualOdometry/bundleAdjust.cpp.o
+
+.PHONY : visualOdometry/bundleAdjust.o
+
+# target to build an object file
+visualOdometry/bundleAdjust.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/bundleAdjust.dir/build.make CMakeFiles/bundleAdjust.dir/visualOdometry/bundleAdjust.cpp.o
+.PHONY : visualOdometry/bundleAdjust.cpp.o
+
+visualOdometry/bundleAdjust.i: visualOdometry/bundleAdjust.cpp.i
+
+.PHONY : visualOdometry/bundleAdjust.i
+
+# target to preprocess a source file
+visualOdometry/bundleAdjust.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/bundleAdjust.dir/build.make CMakeFiles/bundleAdjust.dir/visualOdometry/bundleAdjust.cpp.i
+.PHONY : visualOdometry/bundleAdjust.cpp.i
+
+visualOdometry/bundleAdjust.s: visualOdometry/bundleAdjust.cpp.s
+
+.PHONY : visualOdometry/bundleAdjust.s
+
+# target to generate assembly for a file
+visualOdometry/bundleAdjust.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/bundleAdjust.dir/build.make CMakeFiles/bundleAdjust.dir/visualOdometry/bundleAdjust.cpp.s
+.PHONY : visualOdometry/bundleAdjust.cpp.s
 
 # Help Target
 help:
@@ -177,10 +257,18 @@ help:
 	@echo "... depend"
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
-	@echo "... VisualOdometry"
+	@echo "... BoWtest"
+	@echo "... bundleAdjust"
+	@echo "... visualOdometry"
 	@echo "... visualOdometry/VisualOdometry.o"
 	@echo "... visualOdometry/VisualOdometry.i"
 	@echo "... visualOdometry/VisualOdometry.s"
+	@echo "... visualOdometry/bagOfWordsDetector.o"
+	@echo "... visualOdometry/bagOfWordsDetector.i"
+	@echo "... visualOdometry/bagOfWordsDetector.s"
+	@echo "... visualOdometry/bundleAdjust.o"
+	@echo "... visualOdometry/bundleAdjust.i"
+	@echo "... visualOdometry/bundleAdjust.s"
 .PHONY : help
 
 
