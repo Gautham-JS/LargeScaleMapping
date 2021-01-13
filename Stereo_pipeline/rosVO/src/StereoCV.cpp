@@ -3,6 +3,7 @@
 #include <string>
 
 
+
 #include "../include/stereoCV.h"
 
 using namespace std; using namespace cv;
@@ -22,7 +23,15 @@ Mat StereoProcess::stereoMatch(int iter){
     Mat im1 = getImg(lFptr, iter);
     Mat im2 = getImg(rFptr, iter);
 
-    lImg = im1; rImg= im2;
+    //cvtColor(im1, im1, CV_BGR2RGB);
+    //cvtColor(im2, im2, CV_BGR2RGB);
+
+    lImg = im1; rImg = im2;
+    Mat grayIm1, grayIm2;
+
+    cvtColor(im1, grayIm1, CV_BGR2GRAY);
+    cvtColor(im2, grayIm2, CV_BGR2GRAY);
+
     int winSize = 1;
     Ptr<StereoSGBM> matcher = StereoSGBM::create(
         1, 
@@ -36,12 +45,73 @@ Mat StereoProcess::stereoMatch(int iter){
         3000,
         5
     );
+
+
     Mat disp;
-    matcher->compute(im1, im2, disp);
+    matcher->compute(grayIm1, grayIm2, disp);
     return disp;
 }
 
 void StereoProcess::stereoTriangulate(cv::Mat im1, cv::Mat im2, vector<cv::Point3f>&out3d){
+    Ptr<FeatureDetector> detector = xfeatures2d::SIFT::create(20000);
+    Ptr<FeatureDetector> brief = xfeatures2d::BriefDescriptorExtractor::create();
+    
+    vector<KeyPoint> kp1, kp2;
+    detector->detect(im1, kp1);
+    detector->detect(im2, kp2);
+
+    Mat desc1, desc2;
+    brief->compute(im1, kp1, desc1);
+    brief->compute(im2, kp2, desc2);
+    desc1.convertTo(desc1, CV_32F);
+    desc2.convertTo(desc2, CV_32F);
+
+    BFMatcher matcher;
+    vector<vector<DMatch>> matches;
+
+    matcher.knnMatch(desc1, desc2, matches,2);
+    vector<Point2f> pt1, pt2;
+    for(size_t i=0; i<matches.size(); i++){
+        DMatch &m = matches[i][0]; DMatch &n = matches[i][1];
+        if(m.distance<0.8*n.distance){
+            pt1.emplace_back(kp1[m.queryIdx].pt);
+            pt2.emplace_back(kp2[m.trainIdx].pt);
+        }
+    }
+
+    Mat F; vector<uchar> mask;
+    F = findFundamentalMat(pt1, pt2, CV_FM_RANSAC, 3.0, 0.99, mask);
+    
+    vector<Point2f> inlier1, inlier2;
+    for(size_t i=0; i<mask.size(); i++){
+        if(mask[i]==1){
+            inlier1.emplace_back(pt1[i]);
+            inlier2.emplace_back(pt2[i]);
+        }
+    }
+
+    Mat P1 = Mat::zeros(3,4, CV_64F);
+    Mat P2 = Mat::zeros(3,4, CV_64F);
+    P1.at<double>(0,0) = 1; P1.at<double>(1,1) = 1; P1.at<double>(2,2) = 1;
+    P2.at<double>(0,0) = 1; P2.at<double>(1,1) = 1; P2.at<double>(2,2) = 1;
+    P2.at<double>(0,3) = -baseline;
+
+    P1 = K*P1; P2 = K*P2;
+
+    Mat est3d;
+    triangulatePoints(P1, P2, inlier1, inlier2, est3d);
+    
+    out3d.reserve(est3d.cols);
+    for(size_t i=0; i<est3d.cols; i++){
+        Point3f localpt;
+        localpt.x = est3d.at<float>(0,i) / est3d.at<float>(3,i);
+        localpt.y = est3d.at<float>(1,i) / est3d.at<float>(3,i);
+        localpt.z = est3d.at<float>(2,i) / est3d.at<float>(3,i);
+        out3d.emplace_back(localpt);
+    }
+}
+
+void StereoProcess::monocularTriangulate(Mat im1, Mat im2, vector<Point3f>&out3d){
     Ptr<FeatureDetector> detector = xfeatures2d::SIFT::create(10000);
     
     vector<KeyPoint> kp1, kp2;
@@ -78,6 +148,11 @@ void StereoProcess::stereoTriangulate(cv::Mat im1, cv::Mat im2, vector<cv::Point
         }
     }
 
+    Mat E, R, t;
+
+    E = findEssentialMat(inlier1, inlier2, K, 8, 0.99, 1, noArray());
+    recoverPose(E, inlier1, inlier2, K, R, t, noArray());
+
     Mat P1 = Mat::zeros(3,4, CV_64F);
     Mat P2 = Mat::zeros(3,4, CV_64F);
     P1.at<double>(0,0) = 1; P1.at<double>(1,1) = 1; P1.at<double>(2,2) = 1;
@@ -86,7 +161,7 @@ void StereoProcess::stereoTriangulate(cv::Mat im1, cv::Mat im2, vector<cv::Point
 
     P1 = K*P1; P2 = K*P2;
 
-    Mat est3d; vector<Point3f> RGBstruct;
+    Mat est3d;
     triangulatePoints(P1, P2, inlier1, inlier2, est3d);
     
     out3d.reserve(est3d.cols);
@@ -99,7 +174,7 @@ void StereoProcess::stereoTriangulate(cv::Mat im1, cv::Mat im2, vector<cv::Point
     }
 }
 
-void StereoProcess::visualizeCloud(vector<cv::Point3f>pts3d){
+void StereoProcess::visualizeCloud(vector<cv::Point3f>pts3d, vector<cv::Point3f>colorMap){
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZRGB>);
     
     cloud->points.resize(pts3d.size());
@@ -108,7 +183,7 @@ void StereoProcess::visualizeCloud(vector<cv::Point3f>pts3d){
         cloud->points[i].x = pts3d[i].x; centroidX += pts3d[i].x;
         cloud->points[i].y = pts3d[i].y; centroidY += pts3d[i].y;
         cloud->points[i].z = pts3d[i].z; centroidZ += pts3d[i].z;
-        cloud->points[i].r = 0; cloud->points[i].g = 255; cloud->points[i].b = 0;
+        cloud->points[i].r = colorMap[i].x; cloud->points[i].g = colorMap[i].y; cloud->points[i].b = colorMap[i].z;
     }
     centroidX /= cloud->points.size();
     centroidY /= cloud->points.size();
@@ -121,8 +196,7 @@ void StereoProcess::visualizeCloud(vector<cv::Point3f>pts3d){
     viewer->addPointCloud<pcl::PointXYZRGB>(cloud, "Data");
     viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "Data");
     viewer->initCameraParameters();
-    viewer->addCoordinateSystem(1.0);
-    
+    //viewer->addCoordinateSystem(1.0);
 
     while(!viewer->wasStopped()){
         viewer->spinOnce(100);
@@ -130,27 +204,63 @@ void StereoProcess::visualizeCloud(vector<cv::Point3f>pts3d){
     }
 }
 
+void StereoProcess::reprojectDisparity(cv::Mat disp, vector<cv::Point3f>&reproject3dPoints, vector<cv::Point3f>&colorMap){
+    reproject3dPoints.clear(); colorMap.clear();
+    Mat Q = Mat::zeros(4,4,CV_64F);
+    
+    Mat R = Mat::eye(3,3,CV_64F); Mat t = Mat::zeros(3,1, CV_64F);
+    Mat R1, R2, P1, P2;
+    t.at<double>(0,0) = baseline;
+
+    stereoRectify(K, Mat::zeros(4,1,CV_64F), K ,Mat::zeros(4,1,CV_64F), disp.size(), R, t, R1, R2, P1, P2, Q);
+    disp.convertTo(disp, CV_32F);
+    Mat img3d(disp.size(), CV_32FC3);
+    reprojectImageTo3D(disp,img3d,Q);
+
+    cout<<disp.size()<<" "<<lImg.size()<<endl;
+
+    for(int i=0; i<disp.rows; i++){
+        for(int j=0; j<disp.cols; j++){
+            Vec3f depth = img3d.at<Vec3f>(i,j); Vec3b colors = lImg.at<Vec3b>(i,j);
+
+            if(depth[2]>5 or depth[2]<=0.01){
+                continue;
+            }
+            Point3f pt; Point3f colorData;
+            pt.x = depth[0]; pt.y = depth[1]*-1; pt.z = depth[2];
+            colorData.x = colors[0]; colorData.y = colors[1]; colorData.z = colors[2];
+            reproject3dPoints.emplace_back(pt);
+            colorMap.emplace_back(colorData);
+        }
+    }
+
+}
+
+void StereoProcess::mainLoop(){
+    Mat disp, normDisp;
+    for(int i=0; i<4000; i++){
+        disp = stereoMatch(i);
+        normalize(disp, normDisp, 0, 255,cv::NORM_MINMAX,CV_8U);
+        applyColorMap(normDisp, normDisp, COLORMAP_JET);  
+        imshow("disparity", normDisp);
+        int k = waitKey(10);
+        if(k=='q'){
+            //stereoTriangulate(lImg, rImg, tri3dPoints);
+            reprojectDisparity(disp, tri3dPoints, color3dMap);
+            visualizeCloud(tri3dPoints, color3dMap);
+            break;
+        } 
+    }
+    destroyAllWindows();
+}
+
 int main(){
     const char* impathL = "/media/gautham/Seagate Backup Plus Drive/Datasets/dataset/sequences/00/image_0/%0.6d.png";
     const char* impathR = "/media/gautham/Seagate Backup Plus Drive/Datasets/dataset/sequences/00/image_1/%0.6d.png";
 
     StereoProcess* stereo = new StereoProcess(impathL, impathR);
-    Mat disp, normDisp;
-    for(int i=0; i<4000; i++){
-        disp = stereo->stereoMatch(i);
-        
-        normalize(disp, normDisp, 0, 255,cv::NORM_MINMAX,CV_8U);
-        applyColorMap(normDisp, normDisp, COLORMAP_JET);
-
-        imshow("disparity", normDisp);
-        int k = waitKey(10);
-        if(k=='q'){
-            stereo->stereoTriangulate(stereo->lImg, stereo->rImg, stereo->tri3dPoints);
-            stereo->visualizeCloud(stereo->tri3dPoints);
-            break;
-        }
-    }
-    destroyAllWindows();
+    stereo->mainLoop();
+    return 0;
 }
 
 
