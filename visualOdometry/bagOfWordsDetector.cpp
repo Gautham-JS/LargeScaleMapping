@@ -29,7 +29,7 @@ void loadFeatures(vector<vector<cv::Mat > > &features, int NIMAGES, vector<Strin
     cv::Ptr<cv::ORB> orb = cv::ORB::create();
 
     cout << "Extracting ORB features..." << endl;
-    for(int i = 0; i < NIMAGES; ++i){
+    for(int i = 0; i < NIMAGES; i+=10){
         cout << "images/image" << i << ".png"<<endl;
 
         cv::Mat image = cv::imread(fSysHandle[i], 0);
@@ -65,26 +65,32 @@ void testVocCreation(const vector<vector<cv::Mat > > &features, int NIMAGES)
   cout << "Matching images against themselves (0 low, 1 high): " << endl;
   BowVector v1, v2;
 
-  // for(int i = 0; i < NIMAGES; i++)
-  // { 
-  //   voc.transform(features[i], v1);
-  //   double MaxScore = 0; int bestMatch = 0;
+  for(int i = 0; i < NIMAGES/10; i++)
+  { 
+    voc.transform(features[i], v1);
+    double MaxScore = 0; int bestMatch = 0;
 
-  //   for(int j = 0; j < NIMAGES; j++){
-  //     if(i==j) continue;
-  //     voc.transform(features[j], v2);
-  //     double score = voc.score(v1, v2);
-  //     if(score>MaxScore){
-  //       MaxScore = score;
-  //       bestMatch = j;
-  //     }
-  //     //cout << "Image " << i << " vs Image " << j << ": " << score << endl;
-  //   }
-  //   cout<<"\n\nBEST MATCH BETWEEN IMAGES "<<i<<" , "<<bestMatch<<" WITH SCORE "<<MaxScore<<endl<<endl;
-  //   if(std::abs(i-bestMatch)<10){
-  //     cout<<"FOUND ONLY LOCAL MATCHES"<<endl;
-  //   }
-  // }
+    for(int j = 0; j < NIMAGES/10; j++){
+      if(i==j) continue;
+      voc.transform(features[j], v2);
+      double score = voc.score(v1, v2);
+      if(score>MaxScore){
+        MaxScore = score;
+        bestMatch = j;
+      }
+      //cout << "Image " << i << " vs Image " << j << ": " << score << endl;
+    }
+    if(MaxScore>0.1){
+        cout<<"\n\nBEST MATCH BETWEEN IMAGES "<<i<<" , "<<bestMatch<<" WITH SCORE "<<MaxScore<<endl<<endl;
+    }
+    else{
+        cerr<<"Skippity skip "<<i<<endl;
+        continue;
+    }
+    if(std::abs(i-bestMatch)<10){
+      cout<<"FOUND ONLY LOCAL MATCHES"<<endl;
+    }
+  }
 
   // save the vocabulary to disk
   cout << endl << "Saving vocabulary..." << endl;
@@ -102,7 +108,7 @@ void orbDetect(Mat im, vector<KeyPoint>&keys, Mat descs){
 
 int main(){
     vector<cv::String> indices;
-    glob("/home/gautham/Documents/BuildLibs/DLoopDetector/build/resources/images/*.png", indices, false);
+    glob("/media/gautham/Seagate Backup Plus Drive/Datasets/dataset/sequences/00/image_0/*.png", indices, false);
     
     Mat prevImg;
     vector<vector<Mat>> orbFeatures;
@@ -111,7 +117,7 @@ int main(){
 
     testVocCreation(orbFeatures, indices.size());
 
-    for(size_t i=0; i< indices.size(); i++){
+    for(size_t i=0; i< indices.size(); i+=10){
         cout<<"Processing Frame "<<i<<endl;
         Mat curImg;
         curImg = imread(indices[i],0);

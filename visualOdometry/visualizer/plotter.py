@@ -15,10 +15,13 @@ y_values = []
 xgt_values = []
 ygt_values = []
 
+xopt = []
+yopt = []
+
 data = pd.read_csv("/home/gautham/Documents/Projects/LargeScaleMapping/trajectory.csv")
+dataOpt = pd.read_csv("/home/gautham/Documents/Projects/LargeScaleMapping/trajectoryOptimized.csv")
 
 index = count()
-print(data.iloc[:5,2], data.iloc[:5,5])
 
 xBound = np.max( [np.max(data.iloc[:,0]), np.max(data.iloc[:,3])] )
 ybound = np.max( [np.max(data.iloc[:,2]), np.max(data.iloc[:,5])] )
@@ -33,9 +36,13 @@ def animate(i):
     xgt_values.append(data.iloc[i,3])
     ygt_values.append(data.iloc[i,5])
 
+    xopt.append(dataOpt.iloc[i,0])
+    yopt.append(dataOpt.iloc[i,2])
+
     plt.cla()
-    plt.scatter(x_values, y_values, label="Predicted Trajectory")
-    plt.scatter(xgt_values, ygt_values, label="True Trajectory")
+    plt.scatter(x_values, y_values, label="Predicted Trajectory",c="r")
+    plt.scatter(xgt_values, ygt_values, label="True Trajectory",c="g")
+    plt.scatter(xopt, yopt, label="Optimized Prediction",c="c")
     plt.gcf().autofmt_xdate()
     plt.tight_layout()
     plt.legend()
@@ -43,6 +50,6 @@ def animate(i):
     plt.grid(True)
 
 
-ani = FuncAnimation(plt.gcf(), animate, 4500, interval=10)
+ani = FuncAnimation(plt.gcf(), animate, len(data.iloc[:,0]), interval=10)
 
 plt.show()

@@ -12,8 +12,20 @@
 #include "g2o/stuff/command_args.h"
 #include "g2o/core/factory.h"
 
+
+#include <g2o/types/slam3d/types_slam3d.h>
+#include <g2o/core/block_solver.h>
+#include <g2o/core/optimization_algorithm_levenberg.h>
+#include <g2o/solvers/eigen/linear_solver_eigen.h>
+#include <g2o/core/optimization_algorithm_gauss_newton.h>
+
+typedef g2o::BlockSolver<g2o::BlockSolverTraits<6, 6>> BlockSolverType;
+typedef g2o::LinearSolverEigen<BlockSolverType::PoseMatrixType> LinearSolverType;
+
 using namespace std;
 using namespace g2o;
+
+
 
 class globalPoseGraph{
     public:
@@ -26,13 +38,25 @@ class globalPoseGraph{
         vector<VertexSE3*> vertices;
         vector<EdgeSE3*> odometryEdges;
         vector<EdgeSE3*> edges;
-
-        string outFileName = "poseGraph.g2o";
         
+        // SlamLinearSolver* linearSolver;
+        // OptimizationAlgorithmLevenberg* solver;
+        // SlamBlockSolver* solverPtr;
+        SparseOptimizer optimizer;
+        OptimizationAlgorithm* solver = new g2o::OptimizationAlgorithmGaussNewton(
+            g2o::make_unique<BlockSolverType>(g2o::make_unique<LinearSolverType>())
+        );
+        string outFileName = "poseGraph.g2o";
+    
+    globalPoseGraph(){  
+        optimizer.setAlgorithm(solver);
+        optimizer.setVerbose(true); 
+    }   
 
     void initializeGraph();
     void augmentNode(Eigen::Isometry3d localT, Eigen::Isometry3d globalT);
     void addLoopClosure(Eigen::Isometry3d T, int fromID);
+    vector<Eigen::Isometry3d> globalOptimize();
     void saveStructure();
 };
 
@@ -47,6 +71,8 @@ void globalPoseGraph::initializeGraph(){
 
     v->setEstimate(t);
     vertices.emplace_back(v);
+    optimizer.addVertex(v);
+
     prevVertex = v; 
     globalNodeID++;
 }
@@ -71,20 +97,20 @@ void globalPoseGraph::augmentNode(Eigen::Isometry3d localT, Eigen::Isometry3d gl
     e->setMeasurement(t);
     //cerr<<"break4"<<endl;
     //e->setInformation(information);
+    optimizer.addVertex(cur);
+    optimizer.addEdge(e);
+
     odometryEdges.emplace_back(e);
     //edges.emplace_back(e);
-
-    //cerr<<"Augmenting nodes "<<globalNodeID-1<<" and "<<globalNodeID<<endl;
-    cerr<<globalNodeID<<endl;
     prevVertex = cur;
     vertices.emplace_back(cur);
     globalNodeID++;
 }
 
 void globalPoseGraph::addLoopClosure(Eigen::Isometry3d T, int fromID){
-    VertexSE3* prev = vertices[fromID];
+    VertexSE3* cur = vertices[fromID];
     EdgeSE3* e = new EdgeSE3;
-    VertexSE3* cur = prevVertex;
+    VertexSE3* prev = prevVertex;
 
     //Eigen::Isometry3d t = prev->estimate().inverse() * cur->estimate();
     Eigen::Isometry3d t = Eigen::Isometry3d::Identity();
@@ -92,16 +118,25 @@ void globalPoseGraph::addLoopClosure(Eigen::Isometry3d T, int fromID){
     e->setVertex(1, cur);
     e->setMeasurement(t);
     //e->setInformation(information);
-    //odometryEdges.emplace_back(e);
+    odometryEdges.emplace_back(e);
     edges.emplace_back(e);
-
-    //cerr<<"Augmenting nodes "<<globalNodeID-1<<" and "<<globalNodeID<<endl;
-    cerr<<globalNodeID<<endl;
+    optimizer.addEdge(e);
     //prevVertex = cur;
     //vertices.emplace_back(cur);
     //globalNodeID++;
 }
 
+vector<Eigen::Isometry3d> globalPoseGraph::globalOptimize(){
+    optimizer.initializeOptimization();
+    optimizer.optimize(10);
+    optimizer.save("result.g2o");
+
+    vector<Eigen::Isometry3d> out;
+    for(VertexSE3* v: vertices){
+        out.emplace_back(v->estimate());
+    }
+    return out;
+}
 
 void globalPoseGraph::saveStructure(){
     std::ofstream fileOutputStream;
@@ -111,10 +146,10 @@ void globalPoseGraph::saveStructure(){
     } else {
         cerr << "writing to stdout" << endl;
     }
-
+    cerr<<"b0"<<endl;
     string vertexTag = Factory::instance()->tag(vertices[0]);
-    string edgeTag = Factory::instance()->tag(edges[0]);
-
+    string edgeTag = Factory::instance()->tag(odometryEdges[0]);
+    cerr<<"b1"<<endl;
     ostream& fout = outFileName != "-" ? fileOutputStream : cout;
     for (size_t i = 0; i < vertices.size(); ++i) {
         VertexSE3* v = vertices[i];
@@ -122,6 +157,7 @@ void globalPoseGraph::saveStructure(){
         v->write(fout);
         fout << endl;
     }
+    cerr<<"b2"<<endl;
 
     for (size_t i = 0; i < odometryEdges.size(); ++i) {
         EdgeSE3* e = odometryEdges[i];
@@ -131,15 +167,17 @@ void globalPoseGraph::saveStructure(){
         e->write(fout);
         fout << endl;
     }
-    for (size_t i = 0; i < edges.size(); ++i) {
-        EdgeSE3* e = edges[i];
-        VertexSE3* from = static_cast<VertexSE3*>(e->vertex(0));
-        VertexSE3* to = static_cast<VertexSE3*>(e->vertex(1));
-        fout << edgeTag << " " << from->id() << " " << to->id() << " ";
-        e->write(fout);
-        fout << endl;
-    }
+    cerr<<"b3"<<endl;
+    // for (size_t i = 0; i < edges.size(); ++i) {
+    //     EdgeSE3* e = edges[i];
+    //     VertexSE3* from = static_cast<VertexSE3*>(e->vertex(0));
+    //     VertexSE3* to = static_cast<VertexSE3*>(e->vertex(1));
+    //     fout << edgeTag << " " << from->id() << " " << to->id() << " ";
+    //     e->write(fout);
+    //     fout << endl;
+    // }
     cerr<<"SAVED "<<outFileName<<endl;
 }
+
 
 #endif

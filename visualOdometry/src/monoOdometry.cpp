@@ -82,7 +82,7 @@ void monoOdom::monoTriangulate(Mat img1, Mat img2,vector<Point2f>&ref2dPts, vect
     //Ptr<FeatureDetector> detector = xfeatures2d::SIFT::create(1000);
     //Ptr<FeatureDetector> detector = ORB::create(2000);
     vector<KeyPoint> dkps;
-    dkps = denseKeypointExtractor(img1, 20);
+    dkps = denseKeypointExtractor(img1, 40);
 
     vector<Point2f> refPts;
     for(size_t i=0; i<dkps.size(); i++){
@@ -122,8 +122,6 @@ void monoOdom::monoTriangulate(Mat img1, Mat img2,vector<Point2f>&ref2dPts, vect
     Mat E, mask;
     E = findEssentialMat(refPts, trkPts, K, 8, 0.99, 1, mask);
     recoverPose(E, refPts, trkPts, K, R, t,mask);
-
-    cout<<mask.size()<<endl;
     
     Mat pts4d;
     Mat P1 = Mat::zeros(3,4,CV_64F); Mat P2 = Mat::zeros(3,4,CV_64F);
@@ -158,6 +156,7 @@ void monoOdom::initSequence(){
 
     imMeta.im1 = ima; imMeta.im2 = imb; imMeta.refPts = refPts; imMeta.trkPts = trkPts; imMeta.pts3d = ref3d;
     imMeta.R = R; imMeta.t = t;
+    Rmono = R.clone(); tmono = t.clone();
     rvec = R.clone(); tvec = t.clone();
     poseGraph.initializeGraph();
     prevImMeta = imMeta;
@@ -216,12 +215,26 @@ void monoOdom::stageForPGO(Mat Rl, Mat tl, Mat Rg, Mat tg, bool loopClose){
 
     if(loopClose){
         cerr<<"\n\n\nYEI YEI LOOP CLOSURE TIME BOI\n\n\n"<<endl;
+        LC_FLAG = true;
         poseGraph.addLoopClosure(globalT,idx);
     }
     else{
         poseGraph.augmentNode(localT, globalT);
+    } 
+}
+
+void monoOdom::updateOdometry(vector<Eigen::Isometry3d>&T){
+    cerr<<"\n\nUpdating global odometry measurements"<<endl;
+    vector<float> data;
+    for(Eigen::Isometry3d &isoMatrix : T){
+        Mat t = Eigen2cvMat(isoMatrix);
+        data.emplace_back(t.at<double>(0));
+        data.emplace_back(t.at<double>(1));
+        data.emplace_back(t.at<double>(2));
+        trajectory.emplace_back(t.clone());
     }
-    
+    dumpOptimized(data);
+
 }
 
 void monoOdom::loopSequence(){
@@ -240,15 +253,23 @@ void monoOdom::loopSequence(){
         double xgt,ygt,zgt;
         double absScale = getAbsoluteScale(i, xgt, ygt, zgt);
 
-        cout<<"Abs Scale : "<<absScale<<endl;
+        Mat Rcpy, tcpy;
+        Rcpy = R.clone();
+        tcpy = t.clone();
+
+        //BundleAdjust3d2d(refPts, ref3d, K, Rcpy, tcpy);
 
         if(absScale<0.1){
             tvec = tvec;
             rvec = rvec;
+            tmono = tmono;
+            Rmono = Rmono;
         }
         else{
             tvec = tvec + absScale*(rvec*t);
             rvec = rvec*R;
+            tmono = tmono + absScale*(Rmono*t);
+            Rmono = Rmono*R;
         }
         // rvec = R.t();
         // tvec = -rvec*t;
@@ -258,11 +279,10 @@ void monoOdom::loopSequence(){
         R.col(1).copyTo(inv_transform.col(1));
         R.col(2).copyTo(inv_transform.col(2));
         t.copyTo(inv_transform.col(3));
-        cerr<<i<<endl;
 
         if(i==1591){
            idx = 145;
-           stageForPGO(R, t, rvec, tvec, true);    
+           stageForPGO(R, t, rvec, tvec, true);   
         }
         else if(i==1595){
             idx = 150;
@@ -272,6 +292,7 @@ void monoOdom::loopSequence(){
             idx = 400;
             stageForPGO(R, t, rvec, tvec, true);
         }
+        
 
         stageForPGO(R, t, rvec, tvec, false);
         data.emplace_back(i);
@@ -284,9 +305,8 @@ void monoOdom::loopSequence(){
         data.emplace_back(-1.00);
 
 
-        //cout<<int(tvec.at<double>(0))<<" "<<int(tvec.at<double>(2))<<" "<<int(xgt)<<" "<<int(zgt)<<endl;
- 
-        Point2f center = Point2f(int(tvec.at<double>(0)) + 750, int(-1*tvec.at<double>(2)) + 200);
+        //cout<<int(tvec.at<double>(0))<<" "<<int(tvec.at<double>(2))<<" "<<int(xgt)<<" "<<int(zgt)<<en
+        Point2f center = Point2f(int(tvec.at<double>(0)) + 750, int(-1*tvec.at<double>(2)) + 200);        
         Point2f centerGT = Point2f(xgt + 750, zgt + 200);
         circle(canvas, centerGT ,1, Scalar(0,255,0), 1);
         circle(canvas, center ,1, Scalar(0,0,255), 1);
@@ -299,7 +319,7 @@ void monoOdom::loopSequence(){
         
         debug1 = drawDeltasErr(ima, refPts, trkPts);
         imshow("debug", debug1);
-        imshow("original", canvas);
+        imshow("trajectory", canvas);
         
         if(i==iter){
             createData(data);
@@ -308,14 +328,23 @@ void monoOdom::loopSequence(){
             appendData(data);
         }
         data.clear();
+        LC_FLAG = false;
+        
         int k = waitKey(1);
         if(k=='q'){
-            cerr<<"Trajectory Saved"<<endl;
-            imwrite("Trajectory.png",canvas);
-            poseGraph.saveStructure();
             break;
         }
     }
+    poseGraph.saveStructure();
+    vector<Eigen::Isometry3d> res = poseGraph.globalOptimize();
+    updateOdometry(res);
+    cerr<<"\nRedrawing Trajectory\nPress any key to quit (even power key, never gets old.)"<<endl;
+    for(Mat& position : trajectory){
+        Point2f centerMono = Point2f(int(position.at<double>(0)) + 750, int(-1*position.at<double>(2)) + 200);
+        circle(canvas, centerMono ,1, Scalar(255,0,0), 1);
+    }
+    imshow("trajectory", canvas);
+    waitKey(0);
     cerr<<"Trajectory Saved"<<endl;
     imwrite("Trajectory.png",canvas);
 }

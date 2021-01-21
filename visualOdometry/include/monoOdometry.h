@@ -33,14 +33,17 @@ class monoOdom{
     public:
         int iter = 0;
         int idx = 0;
+        bool LC_FLAG = false;
+        
         const char* lFptr;
         const char* rFptr;
-        Mat im1, im2, R, t, rvec, tvec;
+        Mat im1, im2, R, t, rvec, tvec, Rmono, tmono;
 
         double focal_x = 7.188560000000e+02;
         double cx = 6.071928000000e+02;
         double focal_y = 7.188560000000e+02;
         double cy = 1.852157000000e+02;
+        vector<Mat> trajectory;
 
         Mat canvas = Mat::zeros(1000,1500, CV_8UC3);
         Mat debug1, debug2, debug3; 
@@ -67,8 +70,10 @@ class monoOdom{
         void FmatThresholding(vector<Point2f>&refPts, vector<Point2f>&trkPts);
         void relocalizeFrames(int start, Mat img1, Mat img2, Mat&invTransform, vector<Point2f>&ftrPts, vector<Point3f>pts3d);
         Mat loadImage(int iter);
+        void updateOdometry(vector<Eigen::Isometry3d>&T);
         void initSequence();
         void loopSequence();
+        void pureMonocularSequence();
 };
 
 #endif

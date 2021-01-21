@@ -41,6 +41,20 @@ void createData(vector<float> data){
     outfile.close();
 }
 
+void dumpOptimized(vector<float> data){
+    std::ofstream outfile;
+    outfile.open("trajectoryOptimized.csv");
+    outfile<<"Xo,Yo,Zo\n";
+    for(size_t i=0; i<data.size(); i+=3){
+        for(size_t j=i; j<i+3; j++){
+            outfile<<data[j];
+            outfile<<",";
+        }
+        outfile<<"\n"; 
+    }
+    outfile.close();
+}
+
 inline float SIGN(float x) { 
 	return (x >= 0.0f) ? +1.0f : -1.0f; 
 }
@@ -161,12 +175,16 @@ cv::Mat Eigen2cvMat(const Eigen::Isometry3d& matrix) {
     for ( int i=0; i<3; i++ )
     for ( int j=0; j<3; j++ ) 
         R.at<double>(i,j) = matrix(i,j);
+    
+    Eigen::Vector3d trans = matrix.translation();
 
-    tvec.at<double>(0) = matrix(0, 3); 
-    tvec.at<double>(1) = matrix(1, 3);  
-    tvec.at<double>(2) = matrix(2, 3);
+    cerr<<trans<<endl<<endl;
 
-    tvec = -R.t()*tvec.t(); //SUS af
+    tvec.at<double>(0) = trans(0); 
+    tvec.at<double>(1) = trans(1);  
+    tvec.at<double>(2) = trans(2);
+
+    //tvec = -R.t()*tvec.t(); //SUS af
 
     return tvec;
 }
