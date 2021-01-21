@@ -7,7 +7,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 
-#plt.style.use('fivethirtyeight')
+plt.style.use('ggplot')
 
 x_values = []
 y_values = []
@@ -22,6 +22,7 @@ data = pd.read_csv("/home/gautham/Documents/Projects/LargeScaleMapping/trajector
 dataOpt = pd.read_csv("/home/gautham/Documents/Projects/LargeScaleMapping/trajectoryOptimized.csv")
 
 index = count()
+print(dataOpt.iloc[:5,0], dataOpt.iloc[:5,2])
 
 xBound = np.max( [np.max(data.iloc[:,0]), np.max(data.iloc[:,3])] )
 ybound = np.max( [np.max(data.iloc[:,2]), np.max(data.iloc[:,5])] )
@@ -37,12 +38,15 @@ def animate(i):
     ygt_values.append(data.iloc[i,5])
 
     xopt.append(dataOpt.iloc[i,0])
-    yopt.append(dataOpt.iloc[i,2])
+    yopt.append(-1*dataOpt.iloc[i,2])
 
     plt.cla()
-    plt.scatter(x_values, y_values, label="Predicted Trajectory",c="r")
-    plt.scatter(xgt_values, ygt_values, label="True Trajectory",c="g")
-    plt.scatter(xopt, yopt, label="Optimized Prediction",c="c")
+    plt.scatter(x_values, y_values, label="Noisy Est.",c="b",s=10)
+    #plt.plot(x_values, y_values, label="Predicted Trajectory",c="r")
+    plt.scatter(xgt_values, ygt_values, label="True Trajectory",c="g",s=10)
+   # plt.plot(xgt_values, ygt_values, label="True Trajectory",c="g")
+    plt.scatter(xopt, yopt, label="Optimized Est.",c="r",s=10)
+    #plt.plot(xopt, yopt, label="Optimized Prediction",c="b")
     plt.gcf().autofmt_xdate()
     plt.tight_layout()
     plt.legend()
@@ -50,6 +54,6 @@ def animate(i):
     plt.grid(True)
 
 
-ani = FuncAnimation(plt.gcf(), animate, len(data.iloc[:,0]), interval=10)
+ani = FuncAnimation(plt.gcf(), animate, len(data.iloc[:,0]), interval=1)
 
 plt.show()

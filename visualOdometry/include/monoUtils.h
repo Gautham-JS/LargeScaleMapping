@@ -46,9 +46,16 @@ void dumpOptimized(vector<float> data){
     outfile.open("trajectoryOptimized.csv");
     outfile<<"Xo,Yo,Zo\n";
     for(size_t i=0; i<data.size(); i+=3){
+        int coount = 0;
         for(size_t j=i; j<i+3; j++){
             outfile<<data[j];
-            outfile<<",";
+            if(coount==2){
+                continue;   
+            }
+            else{
+                outfile<<",";
+                coount++;
+            }
         }
         outfile<<"\n"; 
     }
