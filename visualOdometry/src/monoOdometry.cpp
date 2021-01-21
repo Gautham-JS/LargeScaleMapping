@@ -260,15 +260,20 @@ void monoOdom::loopSequence(){
         t.copyTo(inv_transform.col(3));
         cerr<<i<<endl;
 
-        //if(i==1570){
-        //    idx = 120;
-        //    stageForPGO(R, t, rvec, tvec, true);    
-        //}
-        //else{
-            stageForPGO(R, t, rvec, tvec, false);
-        //}
+        if(i==1591){
+           idx = 145;
+           stageForPGO(R, t, rvec, tvec, true);    
+        }
+        else if(i==1595){
+            idx = 150;
+            stageForPGO(R, t, rvec, tvec, true);
+        }
+        else if(i==2455){
+            idx = 400;
+            stageForPGO(R, t, rvec, tvec, true);
+        }
 
-        Mat quat = mRot2Quat(rvec);
+        stageForPGO(R, t, rvec, tvec, false);
         data.emplace_back(i);
         data.emplace_back(tvec.at<double>(0));
         data.emplace_back(tvec.at<double>(1));

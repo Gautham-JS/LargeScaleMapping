@@ -59,6 +59,8 @@ void globalPoseGraph::augmentNode(Eigen::Isometry3d localT, Eigen::Isometry3d gl
 
     cur->setId(globalNodeID);
     cur->setEstimate(globalT);
+    cur->setMarginalized(false);
+    cur->setFixed(false);
     Eigen::Isometry3d t = prev->estimate().inverse() * cur->estimate();
     //cerr<<"break1"<<endl;
     e->setVertex(0, prev);
@@ -68,9 +70,9 @@ void globalPoseGraph::augmentNode(Eigen::Isometry3d localT, Eigen::Isometry3d gl
     
     e->setMeasurement(t);
     //cerr<<"break4"<<endl;
-    e->setInformation(information);
+    //e->setInformation(information);
     odometryEdges.emplace_back(e);
-    edges.emplace_back(e);
+    //edges.emplace_back(e);
 
     //cerr<<"Augmenting nodes "<<globalNodeID-1<<" and "<<globalNodeID<<endl;
     cerr<<globalNodeID<<endl;
@@ -84,21 +86,20 @@ void globalPoseGraph::addLoopClosure(Eigen::Isometry3d T, int fromID){
     EdgeSE3* e = new EdgeSE3;
     VertexSE3* cur = prevVertex;
 
-    cur->setId(globalNodeID);
-    cur->setEstimate(T);
-    Eigen::Isometry3d t = prev->estimate().inverse() * cur->estimate();
+    //Eigen::Isometry3d t = prev->estimate().inverse() * cur->estimate();
+    Eigen::Isometry3d t = Eigen::Isometry3d::Identity();
     e->setVertex(0, prev);
     e->setVertex(1, cur);
     e->setMeasurement(t);
-    e->setInformation(information);
-    odometryEdges.emplace_back(e);
+    //e->setInformation(information);
+    //odometryEdges.emplace_back(e);
     edges.emplace_back(e);
 
     //cerr<<"Augmenting nodes "<<globalNodeID-1<<" and "<<globalNodeID<<endl;
     cerr<<globalNodeID<<endl;
-    prevVertex = cur;
-    vertices.emplace_back(cur);
-    globalNodeID++;
+    //prevVertex = cur;
+    //vertices.emplace_back(cur);
+    //globalNodeID++;
 }
 
 
@@ -115,13 +116,21 @@ void globalPoseGraph::saveStructure(){
     string edgeTag = Factory::instance()->tag(edges[0]);
 
     ostream& fout = outFileName != "-" ? fileOutputStream : cout;
-    // for (size_t i = 0; i < vertices.size(); ++i) {
-    //     VertexSE3* v = vertices[i];
-    //     fout << vertexTag << " " << v->id() << " ";
-    //     v->write(fout);
-    //     fout << endl;
-    // }
+    for (size_t i = 0; i < vertices.size(); ++i) {
+        VertexSE3* v = vertices[i];
+        fout << vertexTag << " " << v->id() << " ";
+        v->write(fout);
+        fout << endl;
+    }
 
+    for (size_t i = 0; i < odometryEdges.size(); ++i) {
+        EdgeSE3* e = odometryEdges[i];
+        VertexSE3* from = static_cast<VertexSE3*>(e->vertex(0));
+        VertexSE3* to = static_cast<VertexSE3*>(e->vertex(1));
+        fout << edgeTag << " " << from->id() << " " << to->id() << " ";
+        e->write(fout);
+        fout << endl;
+    }
     for (size_t i = 0; i < edges.size(); ++i) {
         EdgeSE3* e = edges[i];
         VertexSE3* from = static_cast<VertexSE3*>(e->vertex(0));
