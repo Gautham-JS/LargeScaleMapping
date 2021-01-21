@@ -1,4 +1,6 @@
-#include <bits/stdc++.h>
+#include <iostream>
+#include <vector>
+#include <algorithm>
 
 #include <opencv2/core.hpp>
 #include <opencv2/features2d.hpp>
@@ -45,8 +47,9 @@ class visualOdometry{
                             vector<Point3f>&ref3dPts, 
                             vector<Point2f>&ref2dPts){
             
-            Ptr<FeatureDetector> detector = xfeatures2d::SURF::create(200);
-
+            //Ptr<FeatureDetector> detector = xfeatures2d::SIFT::create(1200);
+            Ptr<FeatureDetector> detector = xfeatures2d::SURF::create(1500);
+            //Ptr<FeatureDetector> detector = ORB::create(6000);
             if(!im1.data || !im2.data){
                 cout<<"NULL IMG"<<endl;
                 return;
@@ -257,9 +260,8 @@ class visualOdometry{
                     continue;
                 }
                 Mat R;
-                cout<<"Ttxp : "<<tvec.t()<<endl;
                 Rodrigues(rvec, R);
-
+    
                 R = R.t();
                 Mat t = -R*tvec;
 
@@ -292,8 +294,8 @@ class visualOdometry{
 };
 
 int main(){
-    const char* impathL = "/home/gautham/Documents/Datasets/dataset/sequences/00/image_0/%0.6d.png";
-    const char* impathR = "/home/gautham/Documents/Datasets/dataset/sequences/00/image_1/%0.6d.png";
+    const char* impathL = "/media/gautham/Seagate Backup Plus Drive/Datasets/dataset/sequences/00/image_0/%0.6d.png";
+    const char* impathR = "/media/gautham/Seagate Backup Plus Drive/Datasets/dataset/sequences/00/image_1/%0.6d.png";
 
     vector<Point2f> ref2d; vector<Point3f> ref3d;
 

@@ -1,4 +1,6 @@
-#include <bits/stdc++.h>
+#include <iostream>
+#include <vector>
+#include <algorithm>
 #include "Eigen/Core"
 
 #include <opencv2/core.hpp>
@@ -39,6 +41,162 @@ struct FrameMetedata{
     Mat K, rvec, tvec, R,t;
 };
 
+struct PoseDatas{
+    float x = -1;
+    float y = -1;
+    float z = -1;
+    float qa = -1;
+    float qb = -1;
+    float qc = -1;
+    float qd = -1;
+};
+
+inline float SIGN(float x) { 
+	return (x >= 0.0f) ? +1.0f : -1.0f; 
+}
+
+inline float NORM(float a, float b, float c, float d) { 
+	return sqrt(a * a + b * b + c * c + d * d); 
+}
+
+// quaternion = [w, x, y, z]'
+Mat mRot2Quat(const Mat& m) {
+	float r11 = m.at<float>(0, 0);
+	float r12 = m.at<float>(0, 1);
+	float r13 = m.at<float>(0, 2);
+	float r21 = m.at<float>(1, 0);
+	float r22 = m.at<float>(1, 1);
+	float r23 = m.at<float>(1, 2);
+	float r31 = m.at<float>(2, 0);
+	float r32 = m.at<float>(2, 1);
+	float r33 = m.at<float>(2, 2);
+	float q0 = (r11 + r22 + r33 + 1.0f) / 4.0f;
+	float q1 = (r11 - r22 - r33 + 1.0f) / 4.0f;
+	float q2 = (-r11 + r22 - r33 + 1.0f) / 4.0f;
+	float q3 = (-r11 - r22 + r33 + 1.0f) / 4.0f;
+	if (q0 < 0.0f) {
+		q0 = 0.0f;
+	}
+	if (q1 < 0.0f) {
+		q1 = 0.0f;
+	}
+	if (q2 < 0.0f) {
+		q2 = 0.0f;
+	}
+	if (q3 < 0.0f) {
+		q3 = 0.0f;
+	}
+	q0 = sqrt(q0);
+	q1 = sqrt(q1);
+	q2 = sqrt(q2);
+	q3 = sqrt(q3);
+	if (q0 >= q1 && q0 >= q2 && q0 >= q3) {
+		q0 *= +1.0f;
+		q1 *= SIGN(r32 - r23);
+		q2 *= SIGN(r13 - r31);
+		q3 *= SIGN(r21 - r12);
+	}
+	else if (q1 >= q0 && q1 >= q2 && q1 >= q3) {
+		q0 *= SIGN(r32 - r23);
+		q1 *= +1.0f;
+		q2 *= SIGN(r21 + r12);
+		q3 *= SIGN(r13 + r31);
+	}
+	else if (q2 >= q0 && q2 >= q1 && q2 >= q3) {
+		q0 *= SIGN(r13 - r31);
+		q1 *= SIGN(r21 + r12);
+		q2 *= +1.0f;
+		q3 *= SIGN(r32 + r23);
+	}
+	else if (q3 >= q0 && q3 >= q1 && q3 >= q2) {
+		q0 *= SIGN(r21 - r12);
+		q1 *= SIGN(r31 + r13);
+		q2 *= SIGN(r32 + r23);
+		q3 *= +1.0f;
+	}
+	else {
+		printf("coding error\n");
+	}
+	float r = NORM(q0, q1, q2, q3);
+	q0 /= r;
+	q1 /= r;
+	q2 /= r;
+	q3 /= r;
+
+	Mat res = (Mat_<float>(4, 1) << q0, q1, q2, q3);
+	return res;
+}
+
+vector<KeyPoint> denseKeypointExtractor(Mat img, int stepSize){
+    vector<KeyPoint> out;
+    for (int y=stepSize; y<img.rows-stepSize; y+=stepSize){
+        for (int x=stepSize; x<img.cols-stepSize; x+=stepSize){
+            out.push_back(KeyPoint(float(x), float(y), float(stepSize)));
+        }
+    }
+    return out;
+}
+
+void appendData(vector<float> data){
+    std::ofstream outfile;
+    outfile.open("/home/gautham/Documents/Projects/LargeScaleMapping/visualOdometry/trajectory.txt");
+    for(size_t i=0; i<data.size(); i+=7){
+        for(size_t j=0; j<7; j++){
+            outfile<<data[j];
+            outfile<<" ";
+        }
+        outfile<<"\n"; 
+    }
+}
+
+
+void pyrLKtracking(Mat refImg, Mat curImg, vector<Point2f>&refPts, vector<Point2f>&trackPts){
+    vector<Point2f> trPts, inlierRefPts, inlierTracked;
+    vector<uchar> Idx;
+    vector<float> err;
+    calcOpticalFlowPyrLK(refImg, curImg, refPts, trPts,Idx, err);
+
+    for(int i=0; i<refPts.size(); i++){
+        if(Idx[i]==1){
+            inlierRefPts.emplace_back(refPts[i]);
+            inlierTracked.emplace_back(trPts[i]);
+        }
+    }
+    trackPts.clear(); refPts.clear();
+    trackPts = inlierTracked; refPts = inlierRefPts;
+}
+
+void FmatThresholding(vector<Point2f>&refPts, vector<Point2f>&trkPts){
+    Mat F;
+    vector<uchar> mask;
+    vector<Point2f>inlierRef, inlierTrk;
+    F = findFundamentalMat(refPts, trkPts, CV_RANSAC, 3.0, 0.99, mask);
+    for(size_t j=0; j<mask.size(); j++){
+        if(mask[j]==1){
+            inlierRef.emplace_back(refPts[j]);
+            inlierTrk.emplace_back(trkPts[j]);
+        }
+    }
+    refPts.clear(); trkPts.clear();
+    refPts = inlierRef; trkPts = inlierTrk;
+}
+
+void FmatThresholding2(vector<Point2f>&refPts, vector<Point2f>&trkPts, vector<Point3f>&ref3d){
+    Mat F;
+    vector<uchar> mask;
+    vector<Point2f>inlierRef, inlierTrk; vector<Point3f> inlier3d;
+    F = findFundamentalMat(refPts, trkPts, CV_RANSAC, 3.0, 0.99, mask);
+    for(size_t j=0; j<mask.size(); j++){
+        if(mask[j]==1){
+            inlierRef.emplace_back(refPts[j]);
+            inlierTrk.emplace_back(trkPts[j]);
+            inlier3d.emplace_back(ref3d[j]);
+        }
+    }
+    refPts.clear(); trkPts.clear(); ref3d.clear();
+    refPts = inlierRef; trkPts = inlierTrk; ref3d = inlier3d;
+}
+
 class visualOdometry{
     public:
         int seqNo;
@@ -57,7 +215,7 @@ class visualOdometry{
         Mat referenceImg, currentImage;
         vector<Point3f> referencePoints3D;
         vector<Point2f> referencePoints2D;
-
+        vector<PoseDatas> poses;
         vector<Point2f> inlierReferencePyrLKPts;
         Mat canvas = Mat::zeros(600,600, CV_8UC3);
 
@@ -79,7 +237,7 @@ class visualOdometry{
                             vector<Point3f>&ref3dPts, 
                             vector<Point2f>&ref2dPts){
             
-            Ptr<FeatureDetector> detector = xfeatures2d::SURF::create(200);
+            Ptr<FeatureDetector> detector = xfeatures2d::SURF::create(500);
             //Ptr<FeatureDetector> detector = BRISK::create();
             if(!im1.data || !im2.data){
                 cout<<"NULL IMG"<<endl;
@@ -87,6 +245,17 @@ class visualOdometry{
             }
 
             vector<KeyPoint> kp1, kp2;
+
+            // kp1 = denseKeypointExtractor(im1, 10);
+            // vector<Point2f> pt1;
+            // for(size_t i=0; i<kp1.size(); i++){
+            //     pt1.emplace_back(kp1[i].pt);
+            // }
+
+            // vector<Point2f> pt2;
+            // pyrLKtracking(im1, im2, pt1, pt2);
+            // FmatThresholding(pt1, pt2);
+
             detector->detect(im1, kp1);
             detector->detect(im2, kp2);
 
@@ -162,7 +331,7 @@ class visualOdometry{
         }
 
         void PyrLKtrackFrame2Frame(Mat refimg, Mat curImg, vector<Point2f>refPts, vector<Point3f>ref3dpts,
-                                            vector<Point2f>&refRetpts, vector<Point3f>&ref3dretPts){
+                                            vector<Point2f>&refRetpts, vector<Point3f>&ref3dretPts, bool Fthresh){
             vector<Point2f> trackPts;
             vector<uchar> Idx;
             vector<float> err;
@@ -181,8 +350,9 @@ class visualOdometry{
                     refRetpts.emplace_back(trackPts[j]);
                 }
             }
-            //refRetpts = inlierTracked;
-            //ref3dretPts = inlierRef3dPts;
+            if(Fthresh){
+                FmatThresholding2(inlierRefPts, refRetpts, ref3dretPts);
+            }
             inlierReferencePyrLKPts = inlierRefPts;
         }
 
@@ -255,11 +425,14 @@ class visualOdometry{
         }
 
         void initSequence(){
-            int iter = 0;
+            int iter = 1;
             char FileName1[200], filename2[200];
             sprintf(FileName1, lFptr, iter);
             sprintf(filename2, rFptr, iter);
+            //PoseDatas* pose = new PoseDatas;
 
+            FrameMetedata* meta = new FrameMetedata;
+            Mat prevR, prevt;
             // Mat imL = imread(FileName1);
             // Mat imR = imread(filename2);
 
@@ -272,39 +445,65 @@ class visualOdometry{
             vector<Point3f> pts3d;
             stereoTriangulate(imL, imR, pts3d, features);
 
-            for(int iter=1; iter<4000; iter++){
+            for(int iter=iter+1; iter<4000; iter++){
                 cout<<"PROCESSING FRAME "<<iter<<endl;
                 currentImage = loadImageL(iter);
 
                 vector<Point3f> refPts3d; vector<Point2f> refFeatures;
-                PyrLKtrackFrame2Frame(referenceImg, currentImage, features, pts3d, refFeatures, refPts3d);
+                PyrLKtrackFrame2Frame(referenceImg, currentImage, features, pts3d, refFeatures, refPts3d, true);
                 //cout<<"     ref features "<<refPts3d.size()<<" refFeature size "<<refFeatures.size()<<endl;
                 
                 Mat distCoeffs = Mat::zeros(4,1,CV_64F);
                 Mat rvec, tvec; vector<int> inliers;
 
                 //cout<<refPts3d.size()<<endl;
-                // cout<<refFeatures.size()<<" "<<inlierReferencePyrLKPts.size()<<" "<<refPts3d.size()<<endl;
+                //cout<<refFeatures.size()<<" "<<inlierReferencePyrLKPts.size()<<" "<<refPts3d.size()<<endl;
 
                 solvePnPRansac(refPts3d, refFeatures, K, distCoeffs, rvec, tvec, false,100,4.0, 0.99, inliers);
+                cout<<"Inlier Size : "<<inliers.size()<<endl;
+                if(inliers.size()<20 or tvec.at<double>(0)>1000){
+                    cout<<"\n\nEyo What the fuck, skipping RANSAC layer and retracking\n"<<endl;
+                    PyrLKtrackFrame2Frame(referenceImg, currentImage, features, pts3d, refFeatures, refPts3d, false);
+                    solvePnPRansac(refPts3d, refFeatures, K, distCoeffs, rvec, tvec, false,100,4.0, 0.99, inliers);
+                    if(inliers.size()<10 or tvec.at<double>(0)>1000){
+                        cout<<"\n\n Damn bro inliers do be less, Skipping RANSAC all together, BA recommended\n"<<endl;
+                        solvePnP(refPts3d, refFeatures, K, distCoeffs, rvec, tvec);
+                    }
+                }
+
+                if(inliers.size()<10){
+                    cout<<"Low inlier count at "<<refFeatures.size()<<", skipping RANSAC and using PnP "<<iter<<endl;
+                    solvePnP(refPts3d, refFeatures, K, distCoeffs, rvec, tvec, false);
+                }
                 Mat R;
                 Rodrigues(rvec, R);
 
                 Mat Rba, tba;
                 R.copyTo(Rba); tvec.copyTo(tba);
-
-                FrameMetedata* meta = new FrameMetedata;
                 meta->ID = iter;
                 meta->inliers = refFeatures;
                 meta->K = K;
                 meta->projection = refPts3d;
                 meta->rvec = rvec;
                 meta->R = R;
-                BundleAdjust3d2d(refFeatures, refPts3d, K, Rba, tba);
+                //BundleAdjust3d2d(refFeatures, refPts3d, K, Rba, tba);
 
                 R = R.t();
                 Mat t = -R*tvec;
 
+                Mat quat; quat = mRot2Quat(R);
+                //PoseDatas pose;
+                // pose.x = t.at<float>(0);
+                // pose.y = t.at<float>(1);
+                // pose.z = t.at<float>(3);
+                // pose.qa = quat.at<float>(0);
+                // pose.qb = quat.at<float>(1);
+                // pose.qc = quat.at<float>(2);
+                // pose.qd = quat.at<float>(3);
+                
+                //poses.emplace_back(pose);
+
+                prevR =  rvec; prevt = tvec;
                 Rba = Rba.t();
                 tba = -Rba*tba;
 
@@ -313,7 +512,7 @@ class visualOdometry{
                 R.col(1).copyTo(inv_transform.col(1));
                 R.col(2).copyTo(inv_transform.col(2));
                 t.copyTo(inv_transform.col(3));
-                
+
 
                 Mat i1 = loadImageL(iter); Mat i2 = loadImageR(iter);
 
@@ -325,10 +524,6 @@ class visualOdometry{
 
                 referenceImg = currentImage;
 
-                if(inliers.size()<10){
-                    cout<<"Low inlier count at "<<inliers.size()<<", skipping frame "<<iter<<endl;
-                    continue;
-                }
 
                 t.convertTo(t, CV_32F);
                 tba.convertTo(tba, CV_32F);
@@ -336,9 +531,9 @@ class visualOdometry{
                 Mat frame = drawDeltas(currentImage, inlierReferencePyrLKPts, refFeatures);
 
                 Point2f center = Point2f(int(t.at<float>(0)) + 300, int(t.at<float>(2)) + 100);
-                Point2f centerBA = Point2f(int(tba.at<float>(0)) + 300, int(tba.at<float>(2)) + 100);
+                //Point2f centerBA = Point2f(int(tba.at<float>(0)) + 300, int(tba.at<float>(2)) + 100);
                 circle(canvas, center ,1, Scalar(0,0,255), 1);
-                circle(canvas, centerBA ,1, Scalar(0,255,0), 1);
+                //circle(canvas, centerBA ,1, Scalar(0,255,0), 1);
                 rectangle(canvas, Point2f(10, 30), Point2f(550, 50),  Scalar(0,0,0), cv::FILLED);
 
                 imshow("frame", frame);
@@ -348,6 +543,8 @@ class visualOdometry{
                     break;
                 }
             }
+            cerr<<"Trajectory Saved"<<endl;
+            imwrite("Trajectory.png",canvas);
         }
 
 /*-------------------------------------EXPERIMENTAL SHIT BEGINS HERE-------------------------------------------------------------*/
@@ -418,9 +615,8 @@ class visualOdometry{
 
 
 int main(){
-    const char* impathL = "/home/gautham/Documents/Datasets/dataset/sequences/00/image_0/%0.6d.png";
-    const char* impathR = "/home/gautham/Documents/Datasets/dataset/sequences/00/image_1/%0.6d.png";
-
+    const char* impathL = "/media/gautham/Seagate Backup Plus Drive/Datasets/dataset/sequences/00/image_0/%0.6d.png";
+    const char* impathR = "/media/gautham/Seagate Backup Plus Drive/Datasets/dataset/sequences/00/image_1/%0.6d.png";
     vector<Point2f> ref2d; vector<Point3f> ref3d;
 
     visualOdometry VO(0, impathL, impathR);
