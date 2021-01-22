@@ -13,12 +13,13 @@ using namespace std;
 using namespace cv;
 
 
+
 Mat monoOdom::loadImage(int iter){
     char fileName[200];
     sprintf(fileName, lFptr, iter);
     Mat im = imread(fileName);
     if(!im.data){
-        cout<<"YIKES, failed to grab "<<iter<<" image.\nYou might wanna check that path again dawg."<<endl;
+        cerr<<"YIKES, failed to grab "<<iter<<" image.\nYou might wanna check that path again dawg."<<endl;
     }
     return im;
 }
@@ -79,8 +80,8 @@ void monoOdom::FmatThresholding(vector<Point2f>&refPts, vector<Point2f>&trkPts){
 }
 
 void monoOdom::monoTriangulate(Mat img1, Mat img2,vector<Point2f>&ref2dPts, vector<Point2f>&trk2dPts, vector<Point3f>&ref3dpts){
-    //Ptr<FeatureDetector> detector = xfeatures2d::SIFT::create(1000);
-    //Ptr<FeatureDetector> detector = ORB::create(2000);
+    // Ptr<FeatureDetector> detector = xfeatures2d::SIFT::create(1000);
+    // Ptr<FeatureDetector> detector = ORB::create(2000);
     vector<KeyPoint> dkps;
     dkps = denseKeypointExtractor(img1, 40);
 
@@ -154,6 +155,9 @@ void monoOdom::initSequence(){
     vector<Point3f> ref3d;
     monoTriangulate(ima, imb, refPts, trkPts, ref3d);
 
+    prevFeatures = refPts;
+    prev3d = ref3d;
+
     imMeta.im1 = ima; imMeta.im2 = imb; imMeta.refPts = refPts; imMeta.trkPts = trkPts; imMeta.pts3d = ref3d;
     imMeta.R = R; imMeta.t = t;
     Rmono = R.clone(); tmono = t.clone();
@@ -214,9 +218,9 @@ void monoOdom::stageForPGO(Mat Rl, Mat tl, Mat Rg, Mat tg, bool loopClose){
     globalT = cvMat2Eigen(Rg, tg);
 
     if(loopClose){
-        cerr<<"\n\n\nYEI YEI LOOP CLOSURE TIME BOI\n\n\n"<<endl;
+        //cerr<<"\n\n\nYEI YEI LOOP CLOSURE TIME BOI\n\n\n"<<endl;
         LC_FLAG = true;
-        poseGraph.addLoopClosure(globalT,idx);
+        poseGraph.addLoopClosure(globalT,LCidx);
     }
     else{
         poseGraph.augmentNode(localT, globalT);
@@ -234,7 +238,24 @@ void monoOdom::updateOdometry(vector<Eigen::Isometry3d>&T){
         trajectory.emplace_back(t.clone());
     }
     dumpOptimized(data);
+}
 
+void monoOdom::checkLoopDetector(Mat img, int idx){
+    Ptr<FeatureDetector> orb = ORB::create();
+    vector<KeyPoint> kp;
+    Mat desc;
+    vector<FORB::TDescriptor> descriptors;
+
+    orb->detectAndCompute(img, Mat(), kp, desc);
+    restructure(desc, descriptors);
+    DetectionResult result;
+    loopDetector->detectLoop(kp, descriptors, result);
+    if(result.detection() &&(result.query-result.match > 100) && cooldownTimer==0){
+        cerr<<"Found Loop Closure between "<<idx<<" and "<<result.match<<endl;
+        LC_FLAG = true;
+        LCidx = result.match-1;
+        cooldownTimer = 100;
+    }
 }
 
 void monoOdom::loopSequence(){
@@ -280,17 +301,9 @@ void monoOdom::loopSequence(){
         R.col(2).copyTo(inv_transform.col(2));
         t.copyTo(inv_transform.col(3));
 
-        if(i==1591){
-           idx = 145;
+        checkLoopDetector(ima, i);
+        if(LC_FLAG){
            stageForPGO(R, t, rvec, tvec, true);   
-        }
-        else if(i==1595){
-            idx = 150;
-            stageForPGO(R, t, rvec, tvec, true);
-        }
-        else if(i==2455){
-            idx = 400;
-            stageForPGO(R, t, rvec, tvec, true);
         }
         
 
@@ -327,28 +340,51 @@ void monoOdom::loopSequence(){
         else{
             appendData(data);
         }
-        data.clear();
+        // if(LC_FLAG){
+        //     if(cooldownTimer==0){
+        //         vector<Eigen::Isometry3d> res = poseGraph.globalOptimize();
+        //         updateOdometry(res);
+        //         cerr<<"Redrawing Trajectory"<<endl;
+        //         Mat tUpdated;
+        //         for(Mat& position : trajectory){
+        //             Point2f centerMono = Point2f(int(position.at<double>(0)) + 750, int(-1*position.at<double>(2)) + 200);
+        //             circle(canvas, centerMono ,1, Scalar(255,0,0), 1);
+        //             tUpdated = position.clone();
+        //         }
+        //         tmono = tUpdated.clone();
+        //         LC_FLAG = false;
+        //     }
+        //     else{
+        //         cooldownTimer--;
+        //     }
+        // }
+
         LC_FLAG = false;
-        
+        data.clear();
+
+        cerr<<"Timer : "<<cooldownTimer<<"\r";
+        if(cooldownTimer!=0){
+            cooldownTimer-=1;
+        }
         int k = waitKey(1);
         if(k=='q'){
             break;
         }
     }
+
     poseGraph.saveStructure();
     vector<Eigen::Isometry3d> res = poseGraph.globalOptimize();
     updateOdometry(res);
-    cerr<<"\nRedrawing Trajectory\nPress any key to quit (even power key, never gets old.)"<<endl;
+    cerr<<"\nRedrawing Trajectory\nPress any key to quit (even power key, lmao.)"<<endl;
     for(Mat& position : trajectory){
         Point2f centerMono = Point2f(int(position.at<double>(0)) + 750, int(-1*position.at<double>(2)) + 200);
         circle(canvas, centerMono ,1, Scalar(255,0,0), 1);
     }
     imshow("trajectory", canvas);
     waitKey(0);
-    cerr<<"Trajectory Saved"<<endl;
     imwrite("Trajectory.png",canvas);
+    cerr<<"Trajectory Saved"<<endl;
 }
-
 
 int main(){
     const char* impathL = "/media/gautham/Seagate Backup Plus Drive/Datasets/dataset/sequences/00/image_0/%0.6d.png";
@@ -357,5 +393,6 @@ int main(){
     monoOdom od(0, impathL, impathR);
     od.initSequence();
     od.loopSequence();
+    //od.pureMonocularSequence();
     return 0;
 }

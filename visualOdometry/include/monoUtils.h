@@ -8,10 +8,21 @@ buncha utility functions to clean up base CXX files
 
 #include "monoOdometry.h"
 #include "poseGraph.h"
+#include "DloopDet.h"
 
 using namespace std;
 using namespace cv;
 using namespace g2o;
+using namespace DLoopDetector;
+using namespace DBoW2;
+
+void restructure (cv::Mat& plain, vector<FORB::TDescriptor> &descriptors){  
+    const int L = plain.rows;
+    descriptors.resize(L);
+    for (unsigned int i = 0; i < (unsigned int)plain.rows; i++) {
+        descriptors[i] = plain.row(i);
+    }
+}
 
 void appendData(vector<float> data){
     std::ofstream outfile;
@@ -184,8 +195,6 @@ cv::Mat Eigen2cvMat(const Eigen::Isometry3d& matrix) {
         R.at<double>(i,j) = matrix(i,j);
     
     Eigen::Vector3d trans = matrix.translation();
-
-    cerr<<trans<<endl<<endl;
 
     tvec.at<double>(0) = trans(0); 
     tvec.at<double>(1) = trans(1);  

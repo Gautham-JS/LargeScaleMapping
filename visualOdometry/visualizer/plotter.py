@@ -41,19 +41,21 @@ def animate(i):
     yopt.append(-1*dataOpt.iloc[i,2])
 
     plt.cla()
-    plt.scatter(x_values, y_values, label="Noisy Est.",c="b",s=10)
+    plt.scatter(x_values, y_values, label="Noisy Est.",c="b",s=5)
     #plt.plot(x_values, y_values, label="Predicted Trajectory",c="r")
-    plt.scatter(xgt_values, ygt_values, label="True Trajectory",c="g",s=10)
+    plt.scatter(xgt_values, ygt_values, label="True Trajectory",c="g",s=5)
    # plt.plot(xgt_values, ygt_values, label="True Trajectory",c="g")
-    plt.scatter(xopt, yopt, label="Optimized Est.",c="r",s=10)
+    plt.scatter(xopt, yopt, label="Optimized Est.",c="r",s=5)
     #plt.plot(xopt, yopt, label="Optimized Prediction",c="b")
     plt.gcf().autofmt_xdate()
     plt.tight_layout()
-    plt.legend()
+    leg = plt.legend(loc="lower right")
+    for handles in leg.legendHandles:
+        handles.set_sizes([50.0])
     plt.axis("scaled")
     plt.grid(True)
 
 
-ani = FuncAnimation(plt.gcf(), animate, len(data.iloc[:,0]), interval=1)
+ani = FuncAnimation(plt.gcf(), animate, len(data.iloc[:,0]), interval=0.1)
 
 plt.show()

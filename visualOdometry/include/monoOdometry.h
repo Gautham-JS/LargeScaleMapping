@@ -13,14 +13,22 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/features2d/features2d.hpp>
 
+#include "DBoW2/DBoW2.h"
+
 #include <iostream>
 #include <vector>
 #include <algorithm>
 
 #include "poseGraph.h"
+#include "DloopDet.h"
+#include "TemplatedLoopDetector.h"
 
 using namespace cv;
 using namespace std;
+using namespace DLoopDetector;
+using namespace DBoW2;
+
+typedef TemplatedDatabase<DBoW2::FORB::TDescriptor, DBoW2::FORB> KeyFrameSelection;
 
 struct imageMetadata{
     Mat im1, im2, R, t;
@@ -32,7 +40,8 @@ struct imageMetadata{
 class monoOdom{
     public:
         int iter = 0;
-        int idx = 0;
+        int LCidx = 0;
+        int cooldownTimer = 0;
         bool LC_FLAG = false;
         
         const char* lFptr;
@@ -50,6 +59,14 @@ class monoOdom{
         Mat K = (Mat1d(3,3) << focal_x, 0, cx, 0, focal_y, cy, 0, 0, 1);
         Mat im1prev, im2prev;
         
+        std::shared_ptr<OrbLoopDetector> loopDetector;
+        std::shared_ptr<OrbVocabulary> voc;
+        std::shared_ptr<KeyFrameSelection> KFselector;
+        std::string vocfile = "/home/gautham/Documents/Projects/LargeScaleMapping/orb_voc.yml.gz";
+
+        vector<Point2f> prevFeatures;
+        vector<Point3f> prev3d;
+
         imageMetadata imMeta;
         imageMetadata prevImMeta;
 
@@ -57,7 +74,33 @@ class monoOdom{
 
         monoOdom(int seq, const char* lptr, const char* rptr){
             lFptr = lptr; rFptr = rptr;
+            
+            Params param;
+            param.image_rows = 1241;
+            param.image_cols = 376;
+            param.use_nss = true;
+            param.alpha = 0.9;
+            param.k = 3;
+            param.geom_check = GEOM_DI;
+            param.di_levels = 2;
+
+            voc.reset(new OrbVocabulary());
+            cerr<<"Loading vocabulary file : "<<vocfile<<endl;
+            voc->load(vocfile);
+            cerr<<"Done"<<endl;
+
+            loopDetector.reset(new OrbLoopDetector(*voc, param));
+            loopDetector->allocate(4000);
         }
+        void restructure (cv::Mat& plain, vector<FORB::TDescriptor> &descriptors){  
+            const int L = plain.rows;
+            descriptors.resize(L);
+            for (unsigned int i = 0; i < (unsigned int)plain.rows; i++) {
+                descriptors[i] = plain.row(i);
+            }
+        }
+
+        void checkLoopDetector(Mat img, int idx);
         void relocalize(int start, Mat imL, Mat imR, Mat&inv_transform, vector<Point2f>&ftrPts, vector<Point3f>&pts3d);
         void PyrLKtrackFrame2Frame(Mat refimg, Mat curImg, vector<Point2f>refPts, vector<Point3f>ref3dpts,
                                             vector<Point2f>&refRetpts, vector<Point3f>&ref3dretPts);
