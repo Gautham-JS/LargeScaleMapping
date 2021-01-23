@@ -72,6 +72,8 @@ class monoOdom{
 
         globalPoseGraph poseGraph;
 
+        std::string LC_debug_status = "No loop closure found yet";
+
         monoOdom(int seq, const char* lptr, const char* rptr){
             lFptr = lptr; rFptr = rptr;
             
@@ -80,7 +82,7 @@ class monoOdom{
             param.image_cols = 376;
             param.use_nss = true;
             param.alpha = 0.9;
-            param.k = 3;
+            param.k = 4;
             param.geom_check = GEOM_DI;
             param.di_levels = 2;
 

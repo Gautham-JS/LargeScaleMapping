@@ -302,12 +302,18 @@ void monoOdom::loopSequence(){
         t.copyTo(inv_transform.col(3));
 
         checkLoopDetector(ima, i);
-        if(LC_FLAG){
-           stageForPGO(R, t, rvec, tvec, true);   
-        }
-        
 
-        stageForPGO(R, t, rvec, tvec, false);
+        if(LC_FLAG){
+            stageForPGO(R, t, Rmono, tmono, true);
+            stageForPGO(R, t, Rmono, tmono, false);
+            std::vector<Eigen::Isometry3d> trans = poseGraph.globalOptimize();
+            Mat interT = Eigen2cvMat(trans[trans.size()-1]);
+            tmono = interT.t();
+        }
+        else{
+            stageForPGO(R, t, Rmono, tmono, false);
+        }
+
         data.emplace_back(i);
         data.emplace_back(tvec.at<double>(0));
         data.emplace_back(tvec.at<double>(1));

@@ -2,10 +2,12 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 import random
-from itertools import count
+from itertools import count, combinations
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
+import itertools
+
 
 plt.style.use('ggplot')
 
