@@ -1,6 +1,8 @@
 #include <iostream>
 #include <vector>
 #include <algorithm>
+#include <thread>
+#include <stdio.h>
 
 #include <opencv2/core.hpp>
 #include <opencv2/features2d.hpp>
@@ -11,13 +13,40 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/features2d/features2d.hpp>
 
+
+#include "DBoW2/DBoW2.h"
+
+#include "./include/poseGraph.h"
+#include "./include/DloopDet.h"
+#include "./include/TemplatedLoopDetector.h"
+#include "./include/monoUtils.h"
+
 using namespace std;
 using namespace cv;
+using namespace DLoopDetector;
+using namespace DBoW2;
+
+#define X_BOUND 1000
+#define Y_BOUND 1500
+
+typedef TemplatedDatabase<DBoW2::FORB::TDescriptor, DBoW2::FORB> KeyFrameSelection;
+
+struct metaData{
+    int idx = -1;
+    vector<Point2f> refPts;
+    vector<Point2f> trkPts;
+    vector<Point3f> pts3d;
+};
 
 class visualOdometry{
     public:
         int seqNo;
         double baseline = 0.54;
+        int Xbias = 750;
+        int Ybias = 200;
+        int LCidx = 0;
+        int cooldownTimer = 0;
+        bool LC_FLAG = false;
 
         string absPath;
         const char* lFptr; const char* rFptr;
@@ -30,38 +59,97 @@ class visualOdometry{
         Mat K = (Mat1d(3,3) << focal_x, 0, cx, 0, focal_y, cy, 0, 0, 1);
         
         Mat referenceImg, currentImage;
-        vector<Point3f> referencePoints3D;
+        vector<Point3f> referencePoints3D, mapPts;
         vector<Point2f> referencePoints2D;
+        vector<vector<Point3f>> mapHistory;
+        vector<cv::Mat> trajectory;
 
         vector<Point2f> inlierReferencePyrLKPts;
-        Mat canvas = Mat::zeros(600,600, CV_8UC3);
-
+        Mat canvas = Mat::zeros(X_BOUND, Y_BOUND, CV_8UC3);
         Mat ret;
+
+        globalPoseGraph poseGraph;
+
+        std::shared_ptr<OrbLoopDetector> loopDetector;
+        std::shared_ptr<OrbVocabulary> voc;
+        std::shared_ptr<KeyFrameSelection> KFselector;
+        std::string vocfile = "/home/gautham/Documents/Projects/LargeScaleMapping/orb_voc00.yml.gz";
 
         visualOdometry(int Seq, const char*Lfptr, const char*Rfptr){
             lFptr = Lfptr;
             rFptr = Rfptr;
+
+            Params param;
+            param.image_rows = 1241;
+            param.image_cols = 376;
+            param.use_nss = true;
+            param.alpha = 0.9;
+            param.k = 1;
+            param.geom_check = GEOM_DI;
+            param.di_levels = 2;
+
+            voc.reset(new OrbVocabulary());
+            cerr<<"Loading vocabulary file : "<<vocfile<<endl;
+            voc->load(vocfile);
+            cerr<<"Done"<<endl;
+
+            loopDetector.reset(new OrbLoopDetector(*voc, param));
+            loopDetector->allocate(4000);
+        }
+
+        void restructure (cv::Mat& plain, vector<FORB::TDescriptor> &descriptors){  
+            const int L = plain.rows;
+            descriptors.resize(L);
+            for (unsigned int i = 0; i < (unsigned int)plain.rows; i++) {
+                descriptors[i] = plain.row(i);
+            }
+        }
+
+        void checkLoopDetectorStatus(Mat img, int idx){
+            Ptr<FeatureDetector> orb = ORB::create();
+            vector<KeyPoint> kp;
+            Mat desc;
+            vector<FORB::TDescriptor> descriptors;
+
+            orb->detectAndCompute(img, Mat(), kp, desc);
+            restructure(desc, descriptors);
+            DetectionResult result;
+            loopDetector->detectLoop(kp, descriptors, result);
+            if(result.detection() &&(result.query-result.match > 100) && cooldownTimer==0){
+                cerr<<"Found Loop Closure between "<<idx<<" and "<<result.match<<endl;
+                LC_FLAG = true;
+                LCidx = result.match-1;
+                cooldownTimer = 200;
+            }
         }
 
         void stereoTriangulate(Mat im1, Mat im2, 
                             vector<Point3f>&ref3dPts, 
                             vector<Point2f>&ref2dPts){
             
-            //Ptr<FeatureDetector> detector = xfeatures2d::SIFT::create(1200);
-            Ptr<FeatureDetector> detector = xfeatures2d::SURF::create(1500);
-            //Ptr<FeatureDetector> detector = ORB::create(6000);
+            //Ptr<FeatureDetector> detector = xfeatures2d::SIFT::create(1000);
+            Ptr<FeatureDetector> detector = xfeatures2d::SURF::create(200);
+            //Ptr<FeatureDetector> detector = ORB::create(4500);
+            // Ptr<FeatureDetector> fast = xfeatures2d::StarDetector::create();
+            // Ptr<DescriptorExtractor> brief = xfeatures2d::BriefDescriptorExtractor::create();
             if(!im1.data || !im2.data){
                 cout<<"NULL IMG"<<endl;
                 return;
             }
 
             vector<KeyPoint> kp1, kp2;
-            detector->detect(im1, kp1);
-            detector->detect(im2, kp2);
-
             Mat desc1, desc2;
-            detector->compute(im1, kp1, desc1);
-            detector->compute(im2, kp2, desc2);
+
+            std::thread left([&](){
+                detector->detect(im1, kp1);
+                detector->compute(im1, kp1, desc1);
+            });
+            std::thread right([&](){    
+                detector->detect(im2, kp2);
+                detector->compute(im2, kp2, desc2);
+            });
+            left.join();
+            right.join();
 
             desc1.convertTo(desc1, CV_32F);
             desc2.convertTo(desc2, CV_32F);
@@ -122,11 +210,28 @@ class visualOdometry{
             for(int i=0; i<in1.size(); i++){
                 Point2f pt1 = in1[i];
                 Point2f pt2 = in2[i];
-                line(frame, pt1, pt2, Scalar(0,255,0),1);
+                line(frame, pt1, pt2, Scalar(0,255,0),2);
                 circle(frame, pt1, 5, Scalar(0,0,255));
                 circle(frame, pt2, 5, Scalar(255,0,0));
             }
             return frame;
+        }
+
+        void RANSACThreshold(Mat refImg, Mat curImg, vector<Point2f>refPts, vector<Point3f>ref3dpts, vector<Point2f>&inTrkPts, vector<Point3f>&in3dpts){
+            Mat F;
+            vector<uchar> mask;
+            vector<Point2f>inlierRef, inlierTrk;
+            vector<Point3f>inlier3dPts;
+            F = findFundamentalMat(refPts, inTrkPts, CV_RANSAC, 3.0, 0.99, mask);
+            for(size_t j=0; j<mask.size(); j++){
+                if(mask[j]==1){
+                    inlierRef.emplace_back(refPts[j]);
+                    inlierTrk.emplace_back(inTrkPts[j]);
+                    inlier3dPts.emplace_back(ref3dpts[j]);
+                }
+            }
+            inTrkPts.clear();
+
         }
 
         void PyrLKtrackFrame2Frame(Mat refimg, Mat curImg, vector<Point2f>refPts, vector<Point3f>ref3dpts,
@@ -239,31 +344,50 @@ class visualOdometry{
             vector<Point2f> features;
             vector<Point3f> pts3d;
             stereoTriangulate(imL, imR, pts3d, features);
+            poseGraph.initializeGraph();
 
             for(int iter=1; iter<4000; iter++){
-                cout<<"PROCESSING FRAME "<<iter<<endl;
+                //cout<<"PROCESSING FRAME "<<iter<<endl;
                 currentImage = loadImageL(iter);
-
+                
                 vector<Point3f> refPts3d; vector<Point2f> refFeatures;
                 PyrLKtrackFrame2Frame(referenceImg, currentImage, features, pts3d, refFeatures, refPts3d);
-                //cout<<"     ref features "<<refPts3d.size()<<" refFeature size "<<refFeatures.size()<<endl;
                 
                 Mat distCoeffs = Mat::zeros(4,1,CV_64F);
                 Mat rvec, tvec; vector<int> inliers;
 
-                //cout<<refPts3d.size()<<endl;
-                cout<<refFeatures.size()<<" "<<inlierReferencePyrLKPts.size()<<" "<<refPts3d.size()<<endl;
 
-                solvePnPRansac(refPts3d, refFeatures, K, distCoeffs, rvec, tvec, false,100,8.0, 0.99, inliers);
+                checkLoopDetectorStatus(currentImage,iter);
+
+                solvePnPRansac(refPts3d, refFeatures, K, distCoeffs, rvec, tvec, false,100, 1.0, 0.99, inliers);
+                cerr<<"Inlier Size : "<<inliers.size()<<endl;
                 if(inliers.size()<10){
-                    cout<<"Low inlier count at "<<inliers.size()<<", skipping frame "<<iter<<endl;
-                    continue;
+                    cout<<"Low inlier count at "<<inliers.size()<<", reducing reprojection Threshold "<<iter<<endl;
+                    inliers.clear();
+                    solvePnPRansac(refPts3d, refFeatures, K, distCoeffs, rvec, tvec, false,100, 8.0, 0.98, inliers);
+                    if(inliers.size()<10){
+                        cerr<<"Man, some incredibly shitty tracking out here, gotta exit bruh"<<endl;
+                        break;
+                    }
                 }
-                Mat R;
-                Rodrigues(rvec, R);
+                Mat R,Rt;
+                Rodrigues(rvec, Rt);
     
-                R = R.t();
+                R = Rt.t();
                 Mat t = -R*tvec;
+
+                if(LC_FLAG){
+                    stageForPGO(R, t, R, t, true);
+                    stageForPGO(R, t, R, t, false);
+                    std::vector<Eigen::Isometry3d> trans = poseGraph.globalOptimize();
+                    Mat interT = Eigen2cvMat(trans[trans.size()-1]);
+                    t = interT.t();
+                    trajectory.clear();
+                    updateOdometry(trans);
+                }
+                else{
+                    stageForPGO(R, t, R, t, false);
+                }
 
                 Mat inv_transform = Mat::zeros(3,4, CV_64F);
                 R.col(0).copyTo(inv_transform.col(0));
@@ -271,25 +395,123 @@ class visualOdometry{
                 R.col(2).copyTo(inv_transform.col(2));
                 t.copyTo(inv_transform.col(3));
 
-                Mat i1 = loadImageL(iter); Mat i2 = loadImageR(iter);
+                if(inliers.size()<200 or LC_FLAG==true){
+                    cerr<<"ENTERING KEYFRAME AT "<<iter<<endl;
+                    Mat i1 = loadImageL(iter); Mat i2 = loadImageR(iter);
+                    relocalizeFrames(0, i1, i2, inv_transform, features, pts3d);
+                    drawMapPoints(pts3d);
+                    mapHistory.emplace_back(pts3d);
+                }
+                else{
+                    pts3d = refPts3d;
+                    features = refFeatures;
+                }
 
-                relocalizeFrames(0, i1, i2, inv_transform, features, pts3d);
+                if(cooldownTimer!=0){
+                    cooldownTimer--;
+                }
                 referenceImg = currentImage;
+                LC_FLAG = false;
 
                 t.convertTo(t, CV_32F);
                 Mat frame = drawDeltas(currentImage, inlierReferencePyrLKPts, refFeatures);
+                
+                double Xgt, Ygt, Zgt;
+                getAbsoluteScale(iter, Xgt, Ygt, Zgt);
 
-                Point2f center = Point2f(int(t.at<float>(0)) + 300, int(t.at<float>(2)) + 100);
+                
+                Point2f centerGT = Point2f(int(Xgt)+Xbias, int(Zgt)+Ybias);
+                Point2f center = Point2f(int(t.at<float>(0)) + Xbias, int(t.at<float>(2)) + Ybias);
                 circle(canvas, center ,1, Scalar(0,0,255), 2);
+                circle(canvas, centerGT,1,Scalar(0,255,0),2);
                 rectangle(canvas, Point2f(10, 30), Point2f(550, 50),  Scalar(0,0,0), cv::FILLED);
 
                 imshow("frame", frame);
                 imshow("trajectory", canvas);
+
                 int k = waitKey(100);
                 if (k=='q'){
                     break;
                 }
             }
+            cerr<<"Total map size :"<<mapPts.size()<<endl;
+            poseGraph.saveStructure();
+            vector<Eigen::Isometry3d> res = poseGraph.globalOptimize();
+            updateOdometry(res);
+            
+            cerr<<"\nRedrawing Trajectory\nPress any key to quit (even power key, lmao.)"<<endl;
+            for(Mat& position : trajectory){
+                Point2f centerMono = Point2f(int(position.at<double>(0)) + 750, int(position.at<double>(2)) + 200);
+                circle(canvas, centerMono ,1, Scalar(255,0,0), 1);
+            }
+            imshow("trajectory", canvas);
+            waitKey(0);
+            imwrite("Trajectory.png",canvas);
+            cerr<<"Trajectory Saved"<<endl;
+        }
+        void stageForPGO(Mat Rl, Mat tl, Mat Rg, Mat tg, bool loopClose){
+            Eigen::Isometry3d localT, globalT;
+            localT = cvMat2Eigen(Rl, tl);
+            globalT = cvMat2Eigen(Rg, tg);
+            if(loopClose){
+                LC_FLAG = true;
+                poseGraph.addLoopClosure(globalT,LCidx);
+            }
+            else{
+                poseGraph.augmentNode(localT, globalT);
+            } 
+        }
+
+        void updateOdometry(vector<Eigen::Isometry3d>&T){
+            cerr<<"\n\nUpdating global odometry measurements"<<endl;
+            for(Eigen::Isometry3d &isoMatrix : T){
+                Mat t = Eigen2cvMat(isoMatrix);
+                trajectory.emplace_back(t.clone());
+            }
+        }
+
+        void drawMapPoints(vector<Point3f> &pts3d){
+            vector<double> x3,y3,z3;
+            int boundInvalidity = 0;
+            int domainImvalidity = 0; 
+            int depthInvalidity = 0;
+            x3.reserve(pts3d.size()); y3.reserve(pts3d.size()); z3.reserve(pts3d.size());
+            for(Point3f pt: pts3d){
+                x3.emplace_back(pt.x);
+                y3.emplace_back(pt.y*-1);
+                z3.emplace_back(pt.z*-1);
+            }
+
+            double x3max,x3min, y3max,y3min, z3max,z3min;
+            x3max = *max_element(x3.begin(), x3.end());
+            x3min = *min_element(x3.begin(), x3.end());
+
+            y3max = *max_element(y3.begin(), y3.end());
+            y3min = *min_element(y3.begin(), y3.end());
+
+            z3max = *max_element(z3.begin(), z3.end());
+            z3min = *min_element(z3.begin(), z3.end());
+            
+            double yl = 0.1*(y3max-y3min);
+            double ym = 0.5*(y3max-y3min);
+            double zm = 0.2*(y3max-y3min);
+
+            for(Point3f p: pts3d){
+                if(-1*p.z>zm){
+                    depthInvalidity++;
+                    continue;
+                }
+                if(p.x+Xbias>Y_BOUND or p.z+Ybias>X_BOUND){
+                    boundInvalidity++;
+                    continue;
+                }
+                mapPts.emplace_back(p);
+                //cerr<<"Setting pt color at "<<p.x+Xbias<<" "<<p.z+Ybias<<endl;
+                Vec3b color; color[0] = 200; color[1] = 200; color[2] = 200;
+                canvas.at<Vec3b>(Point(p.x+Xbias, p.z+Ybias)) = color;
+            }
+            cerr<<"Depth Invalidity : "<<depthInvalidity<<endl;
+            cerr<<"Bound Invalidity : "<<boundInvalidity<<endl<<endl;
         }
 };
 
@@ -309,4 +531,5 @@ int main(){
     //VO.stereoTriangulate(im1, im2, ref3d, ref2d);
     //visualOdometry* VO = new visualOdometry(0, impathR, impathL);
     VO.initSequence();
+    return 0;
 }

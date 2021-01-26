@@ -42,6 +42,7 @@ class monoOdom{
         int iter = 0;
         int LCidx = 0;
         int cooldownTimer = 0;
+        int inLength = 0;
         bool LC_FLAG = false;
         
         const char* lFptr;
@@ -62,7 +63,7 @@ class monoOdom{
         std::shared_ptr<OrbLoopDetector> loopDetector;
         std::shared_ptr<OrbVocabulary> voc;
         std::shared_ptr<KeyFrameSelection> KFselector;
-        std::string vocfile = "/home/gautham/Documents/Projects/LargeScaleMapping/orb_voc.yml.gz";
+        std::string vocfile = "/home/gautham/Documents/Projects/LargeScaleMapping/orb_voc00.yml.gz";
 
         vector<Point2f> prevFeatures;
         vector<Point3f> prev3d;
@@ -82,7 +83,7 @@ class monoOdom{
             param.image_cols = 376;
             param.use_nss = true;
             param.alpha = 0.9;
-            param.k = 4;
+            param.k = 1;
             param.geom_check = GEOM_DI;
             param.di_levels = 2;
 

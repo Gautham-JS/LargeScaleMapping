@@ -9,16 +9,23 @@ from matplotlib.animation import FuncAnimation
 import itertools
 
 
+
 plt.style.use('ggplot')
 
 x_values = []
 y_values = []
+z_values = []
 
 xgt_values = []
 ygt_values = []
+zgt_values = []
+
+chi = []
+chi_op = []
 
 xopt = []
 yopt = []
+zopt = []
 
 data = pd.read_csv("/home/gautham/Documents/Projects/LargeScaleMapping/trajectory.csv")
 dataOpt = pd.read_csv("/home/gautham/Documents/Projects/LargeScaleMapping/trajectoryOptimized.csv")
@@ -30,10 +37,14 @@ xBound = np.max( [np.max(data.iloc[:,0]), np.max(data.iloc[:,3])] )
 ybound = np.max( [np.max(data.iloc[:,2]), np.max(data.iloc[:,5])] )
 
 
+
+
 def animate(i):
     # x_values = data.iloc[:,1]
     # y_values = data.iloc[:,3]
+    
     x_values.append(data.iloc[i,0])
+    z_values.append(data.iloc[i,1])
     y_values.append(-1*data.iloc[i,2])
 
     xgt_values.append(data.iloc[i,3])
@@ -41,6 +52,8 @@ def animate(i):
 
     xopt.append(dataOpt.iloc[i,0])
     yopt.append(-1*dataOpt.iloc[i,2])
+
+
 
     plt.cla()
     plt.scatter(x_values, y_values, label="Noisy Est.",c="b",s=5)

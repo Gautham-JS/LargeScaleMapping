@@ -30,7 +30,7 @@ Mat monoOdom::drawDeltasErr(Mat im, vector<Point2f> in1, vector<Point2f> in2){
     for(int i=0; i<in1.size(); i++){
         Point2f pt1 = in1[i];
         Point2f pt2 = in2[i];
-        line(frame, pt1, pt2, Scalar(0,255,0),1);
+        line(frame, pt1, pt2, Scalar(0,255,0),2);
         circle(frame, pt1, 5, Scalar(0,0,255));
         circle(frame, pt2, 5, Scalar(255,0,0));
 
@@ -83,7 +83,7 @@ void monoOdom::monoTriangulate(Mat img1, Mat img2,vector<Point2f>&ref2dPts, vect
     // Ptr<FeatureDetector> detector = xfeatures2d::SIFT::create(1000);
     // Ptr<FeatureDetector> detector = ORB::create(2000);
     vector<KeyPoint> dkps;
-    dkps = denseKeypointExtractor(img1, 40);
+    dkps = denseKeypointExtractor(img1, 20);
 
     vector<Point2f> refPts;
     for(size_t i=0; i<dkps.size(); i++){
@@ -218,7 +218,6 @@ void monoOdom::stageForPGO(Mat Rl, Mat tl, Mat Rg, Mat tg, bool loopClose){
     globalT = cvMat2Eigen(Rg, tg);
 
     if(loopClose){
-        //cerr<<"\n\n\nYEI YEI LOOP CLOSURE TIME BOI\n\n\n"<<endl;
         LC_FLAG = true;
         poseGraph.addLoopClosure(globalT,LCidx);
     }
@@ -338,6 +337,7 @@ void monoOdom::loopSequence(){
         
         debug1 = drawDeltasErr(ima, refPts, trkPts);
         imshow("debug", debug1);
+        imshow("Original Image",ima);
         imshow("trajectory", canvas);
         
         if(i==iter){

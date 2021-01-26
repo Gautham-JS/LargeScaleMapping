@@ -16,13 +16,7 @@ using namespace g2o;
 using namespace DLoopDetector;
 using namespace DBoW2;
 
-void restructure (cv::Mat& plain, vector<FORB::TDescriptor> &descriptors){  
-    const int L = plain.rows;
-    descriptors.resize(L);
-    for (unsigned int i = 0; i < (unsigned int)plain.rows; i++) {
-        descriptors[i] = plain.row(i);
-    }
-}
+
 
 void appendData(vector<float> data){
     std::ofstream outfile;

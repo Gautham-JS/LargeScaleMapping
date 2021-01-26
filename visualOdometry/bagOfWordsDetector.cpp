@@ -108,7 +108,7 @@ void orbDetect(Mat im, vector<KeyPoint>&keys, Mat descs){
 
 int main(){
     vector<cv::String> indices;
-    glob("/media/gautham/Seagate Backup Plus Drive/Datasets/dataset/sequences/00/image_0/*.png", indices, false);
+    glob("/media/gautham/Seagate Backup Plus Drive/Datasets/dataset/sequences/08/image_0/*.png", indices, false);
     
     Mat prevImg;
     vector<vector<Mat>> orbFeatures;
