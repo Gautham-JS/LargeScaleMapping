@@ -31,10 +31,10 @@ using namespace DBoW2;
 
 typedef TemplatedDatabase<DBoW2::FORB::TDescriptor, DBoW2::FORB> KeyFrameSelection;
 
-struct metaData{
+struct keyFrame{
     int idx = -1;
-    vector<Point2f> refPts;
-    vector<Point2f> trkPts;
+    bool retrack = false;
+    Mat R,t;
     vector<Point3f> pts3d;
 };
 
@@ -59,10 +59,12 @@ class visualOdometry{
         Mat K = (Mat1d(3,3) << focal_x, 0, cx, 0, focal_y, cy, 0, 0, 1);
         
         Mat referenceImg, currentImage;
-        vector<Point3f> referencePoints3D, mapPts;
+        vector<Point3f> referencePoints3D, mapPts, untransformed;
         vector<Point2f> referencePoints2D;
         vector<vector<Point3f>> mapHistory;
         vector<cv::Mat> trajectory;
+        vector<keyFrame> keyFrameHistory;
+        vector<vector<double>> gtTraj;
 
         vector<Point2f> inlierReferencePyrLKPts;
         Mat canvas = Mat::zeros(X_BOUND, Y_BOUND, CV_8UC3);
@@ -128,7 +130,7 @@ class visualOdometry{
                             vector<Point2f>&ref2dPts){
             
             //Ptr<FeatureDetector> detector = xfeatures2d::SIFT::create(1000);
-            Ptr<FeatureDetector> detector = xfeatures2d::SURF::create(200);
+            Ptr<FeatureDetector> detector = xfeatures2d::SURF::create(1200);
             //Ptr<FeatureDetector> detector = ORB::create(4500);
             // Ptr<FeatureDetector> fast = xfeatures2d::StarDetector::create();
             // Ptr<DescriptorExtractor> brief = xfeatures2d::BriefDescriptorExtractor::create();
@@ -293,6 +295,8 @@ class visualOdometry{
 
             stereoTriangulate(imL, imR, new3d, new2d);
 
+            untransformed = new3d;
+
             for(int i=0; i<new3d.size(); i++){
                 Point3f pt = new3d[i];
                 Point3f p;
@@ -304,6 +308,21 @@ class visualOdometry{
                 pts3d.emplace_back(p);
                 ftrPts.emplace_back(new2d[i]);
             }
+        }
+
+        vector<Point3f> update3dtransformation(vector<Point3f>& pt3d, Mat& inv_transform){ 
+            vector<Point3f> updatePts3d;
+            for(int i=0; i<pt3d.size(); i++){
+                Point3f pt = pt3d[i];
+                Point3f p;
+
+                p.x = inv_transform.at<double>(0,0)*pt.x + inv_transform.at<double>(0,1)*pt.y + inv_transform.at<double>(0,2)*pt.z + inv_transform.at<double>(0,3);
+                p.y = inv_transform.at<double>(1,0)*pt.x + inv_transform.at<double>(1,1)*pt.y + inv_transform.at<double>(1,2)*pt.z + inv_transform.at<double>(1,3);
+                p.z = inv_transform.at<double>(2,0)*pt.x + inv_transform.at<double>(2,1)*pt.y + inv_transform.at<double>(2,2)*pt.z + inv_transform.at<double>(2,3);
+
+                updatePts3d.emplace_back(p);
+            }
+            return updatePts3d;
         }
 
         Mat loadImageL(int iter){
@@ -345,8 +364,14 @@ class visualOdometry{
             vector<Point3f> pts3d;
             stereoTriangulate(imL, imR, pts3d, features);
             poseGraph.initializeGraph();
+            Mat R = Mat::zeros(3,3,CV_64F);
+            R.at<double>(0,0) = 1.0; R.at<double>(1,1) = 1.0; R.at<double>(2,2) = 1.0;
 
-            for(int iter=1; iter<4000; iter++){
+            keyFrame kf; kf.idx = 0; kf.pts3d = pts3d; kf.R = R; kf.t = Mat::zeros(1,3,CV_64F);
+            keyFrameHistory.reserve(4500);
+            keyFrameHistory.emplace_back(kf);
+
+            for(int iter=1; iter<4500; iter++){
                 //cout<<"PROCESSING FRAME "<<iter<<endl;
                 currentImage = loadImageL(iter);
                 
@@ -360,7 +385,7 @@ class visualOdometry{
                 checkLoopDetectorStatus(currentImage,iter);
 
                 solvePnPRansac(refPts3d, refFeatures, K, distCoeffs, rvec, tvec, false,100, 1.0, 0.99, inliers);
-                cerr<<"Inlier Size : "<<inliers.size()<<endl;
+                //cerr<<"Inlier Size : "<<inliers.size()<<endl;
                 if(inliers.size()<10){
                     cout<<"Low inlier count at "<<inliers.size()<<", reducing reprojection Threshold "<<iter<<endl;
                     inliers.clear();
@@ -382,7 +407,6 @@ class visualOdometry{
                     std::vector<Eigen::Isometry3d> trans = poseGraph.globalOptimize();
                     Mat interT = Eigen2cvMat(trans[trans.size()-1]);
                     t = interT.t();
-                    trajectory.clear();
                     updateOdometry(trans);
                 }
                 else{
@@ -394,17 +418,20 @@ class visualOdometry{
                 R.col(1).copyTo(inv_transform.col(1));
                 R.col(2).copyTo(inv_transform.col(2));
                 t.copyTo(inv_transform.col(3));
-
+                
+                bool reloc = false;
                 if(inliers.size()<200 or LC_FLAG==true){
                     cerr<<"ENTERING KEYFRAME AT "<<iter<<endl;
                     Mat i1 = loadImageL(iter); Mat i2 = loadImageR(iter);
                     relocalizeFrames(0, i1, i2, inv_transform, features, pts3d);
-                    drawMapPoints(pts3d);
-                    mapHistory.emplace_back(pts3d);
+                    reloc = true;
                 }
                 else{
                     pts3d = refPts3d;
                     features = refFeatures;
+                }
+                if(iter%10==0){
+                    drawMapPoints(pts3d);
                 }
 
                 if(cooldownTimer!=0){
@@ -413,11 +440,29 @@ class visualOdometry{
                 referenceImg = currentImage;
                 LC_FLAG = false;
 
+                keyFrame kf;
+                kf.idx = iter;
+                kf.R = R;
+                kf.t = t;
+                kf.pts3d = untransformed;
+                if(reloc){
+                    kf.retrack = true;
+                }
+                else{
+                    kf.retrack = false;
+                }
+                
+                keyFrameHistory.emplace_back(kf);
+
+
+
                 t.convertTo(t, CV_32F);
                 Mat frame = drawDeltas(currentImage, inlierReferencePyrLKPts, refFeatures);
                 
                 double Xgt, Ygt, Zgt;
                 getAbsoluteScale(iter, Xgt, Ygt, Zgt);
+                vector<double> gtPose = {Xgt, Ygt, Zgt};
+                gtTraj.emplace_back(gtPose);
 
                 
                 Point2f centerGT = Point2f(int(Xgt)+Xbias, int(Zgt)+Ybias);
@@ -431,6 +476,7 @@ class visualOdometry{
 
                 int k = waitKey(100);
                 if (k=='q'){
+                    imwrite("trajectoryUnopt.png", canvas);
                     break;
                 }
             }
@@ -438,6 +484,7 @@ class visualOdometry{
             poseGraph.saveStructure();
             vector<Eigen::Isometry3d> res = poseGraph.globalOptimize();
             updateOdometry(res);
+            updateCanvas();
             
             cerr<<"\nRedrawing Trajectory\nPress any key to quit (even power key, lmao.)"<<endl;
             for(Mat& position : trajectory){
@@ -463,40 +510,86 @@ class visualOdometry{
         }
 
         void updateOdometry(vector<Eigen::Isometry3d>&T){
-            cerr<<"\n\nUpdating global odometry measurements"<<endl;
+            cerr<<"\n\nUpdating global odometry measurements..."<<endl;
+            trajectory.clear();
+            trajectory.reserve(T.size());
             for(Eigen::Isometry3d &isoMatrix : T){
                 Mat t = Eigen2cvMat(isoMatrix);
                 trajectory.emplace_back(t.clone());
             }
+            cerr<<"Updating global 3D map..."<<endl;
+            mapHistory.clear();
+            for(size_t j=0; j<keyFrameHistory.size(); j++){
+                keyFrame kf = keyFrameHistory[j];
+                Mat R,t;
+                t = trajectory[j];
+                R = kf.R;
+                kf.t = t;
+                t = t.t();
+
+                //cerr<<"txf R : "<<<<" t : "<<t.type()<<endl;
+                Mat inv_transform = Mat::zeros(3,4, CV_64F);
+                R.col(0).copyTo(inv_transform.col(0));
+                R.col(1).copyTo(inv_transform.col(1));
+                R.col(2).copyTo(inv_transform.col(2));
+                t.copyTo(inv_transform.col(3));
+                
+                vector<Point3f> updatePts = update3dtransformation(kf.pts3d, inv_transform);
+                mapHistory.emplace_back(updatePts);
+            }
+            cerr<<"DONE; Trajectory size : "<<trajectory.size()<<" KeyFrame size : "<<keyFrameHistory.size()<<endl;
         }
+
+        void updateCanvas(){
+            canvas = Mat::zeros(X_BOUND, Y_BOUND, CV_8UC3);
+            cerr<<"Updating canvas with optimized estimates..."<<endl;
+            cerr<<trajectory.size()<<" "<<" "<<mapHistory.size()<<endl;
+            for(size_t j=0; j<keyFrameHistory.size(); j++){
+                cerr<<"-1"<<endl;
+                //Mat tg = tGT[j];
+                keyFrame kf = keyFrameHistory[j];
+                Mat t = trajectory[j].clone();
+
+                if(kf.retrack){
+                    vector<Point3f> upMap = mapHistory[j];
+                    cerr<<"0"<<endl;
+                    drawMapPoints(upMap);
+                }
+                if(j<gtTraj.size()-1){
+                    vector<double> GTpose = gtTraj[j];
+                    Point2f centerGT = Point2f(int(GTpose[0])+Xbias, int(GTpose[2])+Ybias);
+                    circle(canvas, centerGT,1,Scalar(0,255,0), 2);
+                }
+                
+                //Point2f centerGT = Point2f(int(tg.at<float>(0))+Xbias, int(tg.at<float>(2))+Ybias);
+                //Point2f center = Point2f(int(t.at<double>(0)) + Xbias, int(t.at<double>(2)) + Ybias);
+                cerr<<"1"<<endl;
+                //circle(canvas, center ,1, Scalar(0,0,255), 2);
+                //circle(canvasCpy, centerGT,1,Scalar(0,255,0),2);
+                rectangle(canvas, Point2f(10, 30), Point2f(550, 50),  Scalar(0,0,0), cv::FILLED);
+                cerr<<"2"<<endl;
+            }
+            //canvas = canvasCpy.clone();
+            cerr<<"DONE"<<endl;
+        }
+
 
         void drawMapPoints(vector<Point3f> &pts3d){
             vector<double> x3,y3,z3;
             int boundInvalidity = 0;
             int domainImvalidity = 0; 
             int depthInvalidity = 0;
-            x3.reserve(pts3d.size()); y3.reserve(pts3d.size()); z3.reserve(pts3d.size());
+            //x3.reserve(pts3d.size()); y3.reserve(pts3d.size()); z3.reserve(pts3d.size());
             for(Point3f pt: pts3d){
                 x3.emplace_back(pt.x);
                 y3.emplace_back(pt.y*-1);
                 z3.emplace_back(pt.z*-1);
             }
 
-            double x3max,x3min, y3max,y3min, z3max,z3min;
-            x3max = *max_element(x3.begin(), x3.end());
-            x3min = *min_element(x3.begin(), x3.end());
+            double zm = 3;
 
-            y3max = *max_element(y3.begin(), y3.end());
-            y3min = *min_element(y3.begin(), y3.end());
-
-            z3max = *max_element(z3.begin(), z3.end());
-            z3min = *min_element(z3.begin(), z3.end());
-            
-            double yl = 0.1*(y3max-y3min);
-            double ym = 0.5*(y3max-y3min);
-            double zm = 0.2*(y3max-y3min);
-
-            for(Point3f p: pts3d){
+            for(size_t j=0; j<pts3d.size(); j+=10){
+                Point3f p = pts3d[j];
                 if(-1*p.z>zm){
                     depthInvalidity++;
                     continue;

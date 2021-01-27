@@ -111,7 +111,6 @@ void globalPoseGraph::addLoopClosure(Eigen::Isometry3d T, int fromID){
     VertexSE3* cur = vertices[fromID];
     EdgeSE3* e = new EdgeSE3;
     VertexSE3* prev = prevVertex;
-
     //Eigen::Isometry3d t = prev->estimate().inverse() * cur->estimate();
     Eigen::Isometry3d t = Eigen::Isometry3d::Identity();
     e->setVertex(0, prev);
